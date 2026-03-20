@@ -1,0 +1,13 @@
+[package]
+name = "memo-words"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+eframe = { version = "0.31", default-features = false, features = ["wgpu", "default_fonts"] }
+tray-icon = "0.19"
+muda = "0.15"
+rand = "0.8"
+mongodb = "3"
+tokio = { version = "1", features = ["rt", "macros"] }
+serde = { version = "1", features = ["derive"] }
