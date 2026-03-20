@@ -2,8 +2,7 @@ name: Build and Release
 
 on:
   push:
-    tags:
-      - 'v*'
+    branches: ["main"]
 
 jobs:
   build-macos:
@@ -41,8 +40,14 @@ jobs:
         run: |
           ditto -c -k --keepParent MemoWords.app MemoWords.zip
 
+      - name: Get version
+        id: version
+        run: echo "version=$(grep '^version' Cargo.toml | head -1 | sed 's/.*"\(.*\)"/\1/')" >> $GITHUB_OUTPUT
+
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: v${{ steps.version.outputs.version }}-${{ github.run_number }}
+          name: Release v${{ steps.version.outputs.version }} (#${{ github.run_number }})
           files: MemoWords.zip
           generate_release_notes: true
