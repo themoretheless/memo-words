@@ -259,3 +259,91 @@ fn speak_word(word: &str) {
 
 #[cfg(not(target_os = "macos"))]
 fn speak_word(_word: &str) {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::Config;
+
+    fn test_app(n: usize, cfg: Config) -> App {
+        let words = (0..n)
+            .map(|i| Word {
+                word: format!("w{i}"),
+                transcription: String::new(),
+                translation: String::new(),
+                frequency: i as i32 + 1,
+            })
+            .collect();
+        let ids = MenuIds {
+            next: muda::MenuId::from("next"),
+            pause: muda::MenuId::from("pause"),
+            quit: muda::MenuId::from("quit"),
+        };
+        App::new(words, ids, cfg)
+    }
+
+    #[test]
+    fn roll_interval_no_jitter_is_exact() {
+        let cfg = Config { interval_secs: 30, jitter_secs: 0, ..Config::default() };
+        let app = test_app(5, cfg);
+        assert_eq!(app.roll_interval(), Duration::from_secs(30));
+    }
+
+    #[test]
+    fn roll_interval_with_jitter_stays_in_range() {
+        let cfg = Config { interval_secs: 30, jitter_secs: 5, ..Config::default() };
+        let app = test_app(5, cfg);
+        for _ in 0..1000 {
+            let s = app.roll_interval().as_secs();
+            assert!((25..=35).contains(&s), "interval {s} out of [25,35]");
+        }
+    }
+
+    #[test]
+    fn roll_interval_never_below_one_second() {
+        let cfg = Config { interval_secs: 2, jitter_secs: 10, ..Config::default() };
+        let app = test_app(5, cfg);
+        for _ in 0..1000 {
+            assert!(app.roll_interval() >= Duration::from_secs(1));
+        }
+    }
+
+    #[test]
+    fn next_word_avoids_repeats_within_recent_window() {
+        // cap = 10/3 = 3, so any run of consecutive picks must be distinct.
+        let mut app = test_app(10, Config::default());
+        let mut last = None;
+        for _ in 0..50 {
+            app.next_word();
+            let idx = app.current_idx.unwrap();
+            assert_ne!(Some(idx), last, "same word shown twice in a row");
+            last = Some(idx);
+        }
+    }
+
+    #[test]
+    fn recent_window_and_set_stay_consistent_and_bounded() {
+        let mut app = test_app(30, Config::default());
+        let cap = app.recent_cap;
+        assert!(cap > 0);
+        for _ in 0..200 {
+            app.next_word();
+            assert!(app.recent.len() <= cap);
+            // The mirror set is kept exactly in sync with the deque.
+            assert_eq!(app.recent.len(), app.recent_set.len());
+            for i in &app.recent {
+                assert!(app.recent_set.contains(i));
+            }
+        }
+    }
+
+    #[test]
+    fn single_word_deck_disables_recent_window() {
+        // recent_cap = 1/3 = 0, so the lone word can repeat without panicking.
+        let mut app = test_app(1, Config::default());
+        app.next_word();
+        app.next_word();
+        assert_eq!(app.current_idx, Some(0));
+        assert!(app.recent.is_empty());
+    }
+}
