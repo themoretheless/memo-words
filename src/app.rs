@@ -3,8 +3,9 @@ use crate::db::Word;
 use crate::ui::{self, CardView};
 use eframe::egui;
 use muda::MenuEvent;
-use rand::seq::SliceRandom;
-use rand::{thread_rng, Rng};
+use rand::rng;
+use rand::seq::IndexedRandom;
+use rand::RngExt;
 use std::collections::{HashSet, VecDeque};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc::{Receiver, Sender};
@@ -86,7 +87,7 @@ impl App {
         // `frequency` is a rank (1 = most common), so weight by its inverse:
         // common words surface more often, rarer ones still appear. Rank <= 0
         // (missing data) falls back to the rarest tier.
-        let rng = &mut thread_rng();
+        let rng = &mut rng();
         let idx = available
             .choose_weighted(rng, |&i| 1.0 / self.words[i].frequency.max(1) as f64)
             .copied()
@@ -119,7 +120,7 @@ impl App {
             return Duration::from_secs(base.max(1) as u64);
         }
         let j = self.cfg.jitter_secs as i64;
-        let delta = thread_rng().gen_range(-j..=j);
+        let delta = rng().random_range(-j..=j);
         Duration::from_secs((base + delta).max(1) as u64)
     }
 
