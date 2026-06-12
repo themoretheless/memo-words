@@ -93,9 +93,8 @@ impl<'a> CardView<'a> {
         (content + 2.0 * INNER_MARGIN).clamp(MIN_WIDTH, MAX_WIDTH)
     }
 
-    pub fn paint(&self, ui: &mut egui::Ui) {
+    pub fn paint(&self, ui: &mut egui::Ui, widget_w: f32) {
         let screen = ui.max_rect();
-        let widget_w = self.compute_width(ui);
 
         let widget_rect = egui::Rect::from_min_size(
             egui::pos2(

@@ -147,8 +147,9 @@ impl eframe::App for App {
                     elapsed,
                     prev_width: self.prev_width,
                 };
-                self.prev_width = view.compute_width(ui);
-                view.paint(ui);
+                let widget_w = view.compute_width(ui);
+                self.prev_width = widget_w;
+                view.paint(ui, widget_w);
             }
         });
 
