@@ -154,16 +154,21 @@ impl eframe::App for App {
         [0.0; 4]
     }
 
-    fn update(&mut self, ctx: &egui::Context, _: &mut eframe::Frame) {
+    fn ui(&mut self, ui: &mut egui::Ui, _: &mut eframe::Frame) {
+        // eframe 0.34 hands us a root Ui with no margin or background, which is
+        // exactly what this absolutely-positioned overlay wants. Grab a Context
+        // handle for viewport commands, repaint scheduling, and threads.
+        let ctx = ui.ctx().clone();
+
         if self.bench {
             self.frames.fetch_add(1, Ordering::Relaxed);
         }
 
         if !self.started {
             self.started = true;
-            self.fill_screen(ctx);
+            self.fill_screen(&ctx);
             if let Some(tx) = self.menu_tx.take() {
-                Self::spawn_menu_watcher(ctx, tx);
+                Self::spawn_menu_watcher(&ctx, tx);
             }
             self.next_word();
 
@@ -207,27 +212,23 @@ impl eframe::App for App {
             .map(|t| t.elapsed().as_secs_f32())
             .unwrap_or(0.0);
 
-        let frame = egui::Frame::central_panel(&ctx.style()).fill(egui::Color32::TRANSPARENT);
-
-        egui::CentralPanel::default().frame(frame).show(ctx, |ui| {
-            if let Some(idx) = self.current_idx {
-                let w = &self.words[idx];
-                let view = CardView {
-                    word: &w.word,
-                    transcription: &w.transcription,
-                    translation: &w.translation,
-                    elapsed,
-                    prev_width: self.prev_width,
-                    transcription_delay: self.cfg.transcription_delay,
-                    translation_delay: self.cfg.translation_delay,
-                    fade_duration: self.cfg.fade_duration,
-                    corner: self.cfg.corner,
-                };
-                let widget_w = view.compute_width(ui);
-                self.prev_width = widget_w;
-                view.paint(ui, widget_w);
-            }
-        });
+        if let Some(idx) = self.current_idx {
+            let w = &self.words[idx];
+            let view = CardView {
+                word: &w.word,
+                transcription: &w.transcription,
+                translation: &w.translation,
+                elapsed,
+                prev_width: self.prev_width,
+                transcription_delay: self.cfg.transcription_delay,
+                translation_delay: self.cfg.translation_delay,
+                fade_duration: self.cfg.fade_duration,
+                corner: self.cfg.corner,
+            };
+            let widget_w = view.compute_width(ui);
+            self.prev_width = widget_w;
+            view.paint(ui, widget_w);
+        }
 
         // Drive repaints by state: animate at ~60 fps while the card fades in,
         // sleep long while paused (a menu event wakes us), otherwise sleep until
