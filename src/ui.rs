@@ -1,3 +1,4 @@
+use crate::config::Corner;
 use eframe::egui;
 use std::sync::Arc;
 
@@ -12,10 +13,8 @@ pub const WIDGET_HEIGHT: f32 = 160.0;
 pub const WORD_FONT_SIZE: f32 = 32.0;
 pub const SUB_FONT_SIZE: f32 = 15.0;
 
-// Animation timings (seconds)
-pub const TRANSCRIPTION_DELAY: f32 = 5.0;
-pub const TRANSLATION_DELAY: f32 = 10.0;
-pub const FADE_DURATION: f32 = 1.0;
+// Animation timings (seconds). Fade delays/duration are configurable per
+// CardView; the width transition stays fixed.
 pub const WIDTH_TRANSITION: f32 = 0.5;
 
 pub fn setup_visuals(ctx: &egui::Context) {
@@ -42,8 +41,8 @@ pub fn smoothstep(t: f32) -> f32 {
     t * t * (3.0 - 2.0 * t)
 }
 
-pub fn fade_factor(elapsed: f32, delay: f32) -> f32 {
-    smoothstep((elapsed - delay) / FADE_DURATION)
+pub fn fade_factor(elapsed: f32, delay: f32, fade_duration: f32) -> f32 {
+    smoothstep((elapsed - delay) / fade_duration)
 }
 
 pub fn measure_text_width(ui: &egui::Ui, text: &str, size: f32) -> f32 {
@@ -76,6 +75,10 @@ pub struct CardView<'a> {
     pub translation: &'a str,
     pub elapsed: f32,
     pub prev_width: f32,
+    pub transcription_delay: f32,
+    pub translation_delay: f32,
+    pub fade_duration: f32,
+    pub corner: Corner,
 }
 
 impl<'a> CardView<'a> {
@@ -84,8 +87,8 @@ impl<'a> CardView<'a> {
         let trans_w = measure_text_width(ui, self.transcription, SUB_FONT_SIZE);
         let transl_w = measure_text_width(ui, self.translation, SUB_FONT_SIZE);
 
-        let trans_ease = fade_factor(self.elapsed, TRANSCRIPTION_DELAY);
-        let transl_ease = fade_factor(self.elapsed, TRANSLATION_DELAY);
+        let trans_ease = fade_factor(self.elapsed, self.transcription_delay, self.fade_duration);
+        let transl_ease = fade_factor(self.elapsed, self.translation_delay, self.fade_duration);
 
         let initial = smoothstep(self.elapsed / WIDTH_TRANSITION);
         let from = self.prev_width - 2.0 * INNER_MARGIN;
@@ -100,19 +103,25 @@ impl<'a> CardView<'a> {
     pub fn paint(&self, ui: &mut egui::Ui, widget_w: f32) {
         let screen = ui.max_rect();
 
+        let x = match self.corner {
+            Corner::TopLeft | Corner::BottomLeft => screen.min.x + SCREEN_MARGIN,
+            Corner::TopRight | Corner::BottomRight => screen.max.x - widget_w - SCREEN_MARGIN,
+        };
+        let y = match self.corner {
+            Corner::TopLeft | Corner::TopRight => screen.min.y + SCREEN_MARGIN,
+            Corner::BottomLeft | Corner::BottomRight => screen.max.y - WIDGET_HEIGHT - SCREEN_MARGIN,
+        };
+
         let widget_rect = egui::Rect::from_min_size(
-            egui::pos2(
-                screen.max.x - widget_w - SCREEN_MARGIN,
-                screen.max.y - WIDGET_HEIGHT - SCREEN_MARGIN,
-            ),
+            egui::pos2(x, y),
             egui::vec2(widget_w, WIDGET_HEIGHT),
         );
 
         ui.painter().rect_filled(widget_rect, CORNER_RADIUS, BG_COLOR);
 
         let inner = widget_rect.shrink(INNER_MARGIN);
-        let trans_ease = fade_factor(self.elapsed, TRANSCRIPTION_DELAY);
-        let transl_ease = fade_factor(self.elapsed, TRANSLATION_DELAY);
+        let trans_ease = fade_factor(self.elapsed, self.transcription_delay, self.fade_duration);
+        let transl_ease = fade_factor(self.elapsed, self.translation_delay, self.fade_duration);
 
         let mut content_h = WORD_FONT_SIZE;
         if trans_ease > 0.01 { content_h += 6.0 * trans_ease + SUB_FONT_SIZE; }

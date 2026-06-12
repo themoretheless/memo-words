@@ -1,4 +1,5 @@
 mod app;
+mod config;
 mod db;
 mod tray;
 mod ui;
@@ -7,6 +8,7 @@ use muda::{Menu, MenuItem};
 use tray_icon::TrayIconBuilder;
 
 fn main() -> eframe::Result<()> {
+    let cfg = config::Config::load();
     let words = if std::env::var("MEMO_BENCH").is_ok() {
         vec![db::Word {
             word: "benchmark".into(),
@@ -19,8 +21,16 @@ fn main() -> eframe::Result<()> {
     };
 
     let menu = Menu::new();
+    let next_item = MenuItem::new("Next word", true, None);
+    let pause_item = MenuItem::new("Pause / Resume", true, None);
     let quit_item = MenuItem::new("Quit", true, None);
-    let quit_id = quit_item.id().clone();
+    let menu_ids = app::MenuIds {
+        next: next_item.id().clone(),
+        pause: pause_item.id().clone(),
+        quit: quit_item.id().clone(),
+    };
+    menu.append(&next_item).unwrap();
+    menu.append(&pause_item).unwrap();
     menu.append(&quit_item).unwrap();
 
     let _tray = TrayIconBuilder::new()
@@ -47,7 +57,7 @@ fn main() -> eframe::Result<()> {
         Box::new(|cc| {
             ui::setup_visuals(&cc.egui_ctx);
             ui::load_fonts(&cc.egui_ctx);
-            Ok(Box::new(app::App::new(words, quit_id.clone())))
+            Ok(Box::new(app::App::new(words, menu_ids.clone(), cfg)))
         }),
     )
 }
