@@ -1,4 +1,5 @@
 mod app;
+mod config;
 mod db;
 mod tray;
 mod ui;
@@ -7,6 +8,7 @@ use muda::{Menu, MenuItem};
 use tray_icon::TrayIconBuilder;
 
 fn main() -> eframe::Result<()> {
+    let cfg = config::Config::load();
     let words = db::load_words();
 
     let menu = Menu::new();
@@ -38,7 +40,7 @@ fn main() -> eframe::Result<()> {
         Box::new(|cc| {
             ui::setup_visuals(&cc.egui_ctx);
             ui::load_fonts(&cc.egui_ctx);
-            Ok(Box::new(app::App::new(words, quit_id.clone())))
+            Ok(Box::new(app::App::new(words, quit_id.clone(), cfg)))
         }),
     )
 }

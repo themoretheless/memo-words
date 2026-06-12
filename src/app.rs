@@ -1,3 +1,4 @@
+use crate::config::Config;
 use crate::db::Word;
 use crate::ui::{self, CardView};
 use eframe::egui;
@@ -7,7 +8,6 @@ use rand::thread_rng;
 use std::collections::VecDeque;
 use std::time::{Duration, Instant};
 
-const WORD_INTERVAL: Duration = Duration::from_secs(30);
 const REPAINT_INTERVAL: Duration = Duration::from_millis(50);
 
 pub struct App {
@@ -20,10 +20,12 @@ pub struct App {
     prev_width: f32,
     started: bool,
     quit_id: muda::MenuId,
+    cfg: Config,
+    word_interval: Duration,
 }
 
 impl App {
-    pub fn new(words: Vec<Word>, quit_id: muda::MenuId) -> Self {
+    pub fn new(words: Vec<Word>, quit_id: muda::MenuId, cfg: Config) -> Self {
         // Sliding window of recently shown words: avoids short-term repeats
         // while still letting frequent words recur over time. Sized to ~a
         // third of the deck, capped so large decks stay varied and small
@@ -39,6 +41,8 @@ impl App {
             prev_width: ui::MIN_WIDTH,
             started: false,
             quit_id,
+            cfg,
+            word_interval: Duration::from_secs(cfg.interval_secs),
         }
     }
 
@@ -98,7 +102,7 @@ impl eframe::App for App {
             }
         }
 
-        if self.last_show.elapsed() >= WORD_INTERVAL {
+        if self.last_show.elapsed() >= self.word_interval {
             self.next_word();
         }
 
@@ -115,6 +119,10 @@ impl eframe::App for App {
                     translation: &w.translation,
                     elapsed: shown_at.elapsed().as_secs_f32(),
                     prev_width: self.prev_width,
+                    transcription_delay: self.cfg.transcription_delay,
+                    translation_delay: self.cfg.translation_delay,
+                    fade_duration: self.cfg.fade_duration,
+                    corner: self.cfg.corner,
                 };
                 self.prev_width = view.compute_width(ui);
                 view.paint(ui);
