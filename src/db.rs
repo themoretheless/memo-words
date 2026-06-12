@@ -15,7 +15,10 @@ pub struct Word {
 pub fn load_words() -> Vec<Word> {
     let words = load_from_mongo();
     if words.is_empty() {
-        eprintln!("Using built-in fallback word set ({} words).", FALLBACK.len());
+        eprintln!(
+            "Using built-in fallback word set ({} words).",
+            FALLBACK.len()
+        );
         return fallback_words();
     }
     words
