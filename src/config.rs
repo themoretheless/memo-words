@@ -117,6 +117,15 @@ impl Config {
     }
 }
 
+fn read_config_file() -> Option<String> {
+    if let Ok(path) = std::env::var("MEMO_CONFIG") {
+        return std::fs::read_to_string(path).ok();
+    }
+    let home = std::env::var("HOME").ok()?;
+    let path = format!("{home}/.config/memo-words/config.conf");
+    std::fs::read_to_string(path).ok()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -168,13 +177,4 @@ mod tests {
         assert_eq!(cfg.corner, def.corner);
         assert_eq!(cfg.speak, def.speak);
     }
-}
-
-fn read_config_file() -> Option<String> {
-    if let Ok(path) = std::env::var("MEMO_CONFIG") {
-        return std::fs::read_to_string(path).ok();
-    }
-    let home = std::env::var("HOME").ok()?;
-    let path = format!("{home}/.config/memo-words/config.conf");
-    std::fs::read_to_string(path).ok()
 }
