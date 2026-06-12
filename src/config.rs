@@ -33,6 +33,7 @@ pub struct Config {
     pub translation_delay: f32,
     pub fade_duration: f32,
     pub corner: Corner,
+    pub speak: bool,
 }
 
 impl Default for Config {
@@ -44,6 +45,7 @@ impl Default for Config {
             translation_delay: 10.0,
             fade_duration: 1.0,
             corner: Corner::BottomRight,
+            speak: false,
         }
     }
 }
@@ -94,6 +96,12 @@ impl Config {
                     if let Some(c) = Corner::parse(value) {
                         cfg.corner = c;
                     }
+                }
+                "speak" => {
+                    cfg.speak = matches!(
+                        value.to_ascii_lowercase().as_str(),
+                        "true" | "1" | "yes" | "on"
+                    );
                 }
                 _ => {}
             }

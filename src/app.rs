@@ -74,6 +74,10 @@ impl App {
         self.shown_at = Some(Instant::now());
         self.last_show = Instant::now();
         self.word_interval = self.roll_interval();
+
+        if self.cfg.speak {
+            speak_word(&self.words[idx].word);
+        }
     }
 
     // Time the current word stays up: base interval optionally jittered by
@@ -144,3 +148,18 @@ impl eframe::App for App {
         });
     }
 }
+
+// Pronounce the word out loud. Fire-and-forget so the UI thread never blocks
+// on the TTS process. macOS only (uses `say`); a no-op elsewhere.
+#[cfg(target_os = "macos")]
+fn speak_word(word: &str) {
+    // Run on a detached thread that waits on the child, so finished `say`
+    // processes are reaped instead of piling up as zombies over a session.
+    let word = word.to_string();
+    std::thread::spawn(move || {
+        let _ = std::process::Command::new("say").arg(word).status();
+    });
+}
+
+#[cfg(not(target_os = "macos"))]
+fn speak_word(_word: &str) {}
