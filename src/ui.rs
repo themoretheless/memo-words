@@ -149,3 +149,31 @@ impl<'a> CardView<'a> {
         });
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn smoothstep_clamps_and_eases() {
+        assert_eq!(smoothstep(-1.0), 0.0);
+        assert_eq!(smoothstep(0.0), 0.0);
+        assert_eq!(smoothstep(1.0), 1.0);
+        assert_eq!(smoothstep(2.0), 1.0);
+        // Symmetric ease passes through 0.5 at the midpoint.
+        assert!((smoothstep(0.5) - 0.5).abs() < 1e-6);
+        // Monotonic.
+        assert!(smoothstep(0.25) < smoothstep(0.75));
+    }
+
+    #[test]
+    fn fade_factor_is_zero_before_delay_and_one_after() {
+        let (delay, fade) = (5.0, 1.0);
+        assert_eq!(fade_factor(0.0, delay, fade), 0.0);
+        assert_eq!(fade_factor(delay, delay, fade), 0.0);
+        assert_eq!(fade_factor(delay + fade, delay, fade), 1.0);
+        assert_eq!(fade_factor(delay + 10.0, delay, fade), 1.0);
+        // Halfway through the fade window is mid-ease.
+        assert!((fade_factor(delay + 0.5 * fade, delay, fade) - 0.5).abs() < 1e-6);
+    }
+}

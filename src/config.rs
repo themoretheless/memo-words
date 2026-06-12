@@ -52,11 +52,18 @@ impl Default for Config {
 
 impl Config {
     pub fn load() -> Self {
-        let mut cfg = Config::default();
-        let Some(text) = read_config_file() else {
-            return cfg;
-        };
+        match read_config_file() {
+            Some(text) => Config::default().merge_str(&text),
+            None => Config::default(),
+        }
+    }
 
+    /// Apply `key = value` lines onto `self`. Comments (`#`) and blank lines are
+    /// skipped; unknown keys and unparseable values are ignored so a malformed
+    /// file never changes a field from its default. Pure (no I/O) so it is unit
+    /// testable without touching the environment or filesystem.
+    fn merge_str(mut self, text: &str) -> Self {
+        let cfg = &mut self;
         for line in text.lines() {
             let line = line.split('#').next().unwrap_or("").trim();
             if line.is_empty() {
@@ -106,7 +113,60 @@ impl Config {
                 _ => {}
             }
         }
-        cfg
+        self
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn corner_parse_accepts_separators_and_case() {
+        assert_eq!(Corner::parse("top-left"), Some(Corner::TopLeft));
+        assert_eq!(Corner::parse("Top_Left"), Some(Corner::TopLeft));
+        assert_eq!(Corner::parse("BOTTOM RIGHT"), Some(Corner::BottomRight));
+        assert_eq!(Corner::parse("middle"), None);
+    }
+
+    #[test]
+    fn merge_str_parses_known_keys() {
+        let cfg = Config::default().merge_str(
+            "interval_secs = 45\njitter_secs = 7\ncorner = top-left\nspeak = yes\nfade_duration = 2.5",
+        );
+        assert_eq!(cfg.interval_secs, 45);
+        assert_eq!(cfg.jitter_secs, 7);
+        assert_eq!(cfg.corner, Corner::TopLeft);
+        assert!(cfg.speak);
+        assert_eq!(cfg.fade_duration, 2.5);
+    }
+
+    #[test]
+    fn merge_str_ignores_comments_blanks_and_garbage() {
+        let cfg = Config::default().merge_str(
+            "# a comment\n\ninterval_secs = 12  # inline comment\nbogus_key = 9\ninterval_secs = not_a_number",
+        );
+        // Valid line applies; inline comment is stripped; the later unparseable
+        // value leaves the field at its last good value; unknown key ignored.
+        assert_eq!(cfg.interval_secs, 12);
+        // Untouched fields keep defaults.
+        assert_eq!(cfg.jitter_secs, Config::default().jitter_secs);
+    }
+
+    #[test]
+    fn merge_str_clamps_out_of_range_values() {
+        let cfg = Config::default().merge_str("interval_secs = 0\nfade_duration = 0");
+        assert_eq!(cfg.interval_secs, 1); // clamped to >= 1
+        assert!(cfg.fade_duration >= 0.01); // clamped to >= 0.01
+    }
+
+    #[test]
+    fn empty_input_keeps_defaults() {
+        let cfg = Config::default().merge_str("");
+        let def = Config::default();
+        assert_eq!(cfg.interval_secs, def.interval_secs);
+        assert_eq!(cfg.corner, def.corner);
+        assert_eq!(cfg.speak, def.speak);
     }
 }
 
