@@ -5,7 +5,7 @@ use eframe::egui;
 use muda::MenuEvent;
 use rand::seq::SliceRandom;
 use rand::{thread_rng, Rng};
-use std::collections::VecDeque;
+use std::collections::{HashSet, VecDeque};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc::{Receiver, Sender};
 use std::sync::Arc;
@@ -28,6 +28,7 @@ pub struct MenuIds {
 pub struct App {
     words: Vec<Word>,
     recent: VecDeque<usize>,
+    recent_set: HashSet<usize>,
     recent_cap: usize,
     current_idx: Option<usize>,
     shown_at: Option<Instant>,
@@ -55,6 +56,7 @@ impl App {
         Self {
             words,
             recent: VecDeque::new(),
+            recent_set: HashSet::new(),
             recent_cap,
             current_idx: None,
             shown_at: None,
@@ -78,7 +80,7 @@ impl App {
         }
 
         let available: Vec<usize> = (0..self.words.len())
-            .filter(|i| !self.recent.contains(i))
+            .filter(|i| !self.recent_set.contains(i))
             .collect();
 
         // `frequency` is a rank (1 = most common), so weight by its inverse:
@@ -92,8 +94,11 @@ impl App {
 
         if self.recent_cap > 0 {
             self.recent.push_back(idx);
+            self.recent_set.insert(idx);
             while self.recent.len() > self.recent_cap {
-                self.recent.pop_front();
+                if let Some(old) = self.recent.pop_front() {
+                    self.recent_set.remove(&old);
+                }
             }
         }
         self.current_idx = Some(idx);
