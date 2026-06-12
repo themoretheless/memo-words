@@ -4,7 +4,7 @@ use eframe::egui;
 use muda::MenuEvent;
 use rand::seq::SliceRandom;
 use rand::thread_rng;
-use std::collections::HashSet;
+use std::collections::VecDeque;
 use std::time::{Duration, Instant};
 
 const WORD_INTERVAL: Duration = Duration::from_secs(30);
@@ -12,7 +12,8 @@ const REPAINT_INTERVAL: Duration = Duration::from_millis(50);
 
 pub struct App {
     words: Vec<Word>,
-    shown: HashSet<usize>,
+    recent: VecDeque<usize>,
+    recent_cap: usize,
     current_idx: Option<usize>,
     shown_at: Option<Instant>,
     last_show: Instant,
@@ -23,9 +24,15 @@ pub struct App {
 
 impl App {
     pub fn new(words: Vec<Word>, quit_id: muda::MenuId) -> Self {
+        // Sliding window of recently shown words: avoids short-term repeats
+        // while still letting frequent words recur over time. Sized to ~a
+        // third of the deck, capped so large decks stay varied and small
+        // decks don't exclude everything.
+        let recent_cap = (words.len() / 3).min(100);
         Self {
             words,
-            shown: HashSet::new(),
+            recent: VecDeque::new(),
+            recent_cap,
             current_idx: None,
             shown_at: None,
             last_show: Instant::now(),
@@ -40,17 +47,25 @@ impl App {
             return;
         }
 
-        let mut available: Vec<usize> = (0..self.words.len())
-            .filter(|i| !self.shown.contains(i))
+        let available: Vec<usize> = (0..self.words.len())
+            .filter(|i| !self.recent.contains(i))
             .collect();
 
-        if available.is_empty() {
-            self.shown.clear();
-            available = (0..self.words.len()).collect();
-        }
+        // `frequency` is a rank (1 = most common), so weight by its inverse:
+        // common words surface more often, rarer ones still appear. Rank <= 0
+        // (missing data) falls back to the rarest tier.
+        let rng = &mut thread_rng();
+        let idx = available
+            .choose_weighted(rng, |&i| 1.0 / self.words[i].frequency.max(1) as f64)
+            .copied()
+            .unwrap();
 
-        let idx = *available.choose(&mut thread_rng()).unwrap();
-        self.shown.insert(idx);
+        if self.recent_cap > 0 {
+            self.recent.push_back(idx);
+            while self.recent.len() > self.recent_cap {
+                self.recent.pop_front();
+            }
+        }
         self.current_idx = Some(idx);
         self.shown_at = Some(Instant::now());
         self.last_show = Instant::now();
