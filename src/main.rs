@@ -7,7 +7,16 @@ use muda::{Menu, MenuItem};
 use tray_icon::TrayIconBuilder;
 
 fn main() -> eframe::Result<()> {
-    let words = db::load_words();
+    let words = if std::env::var("MEMO_BENCH").is_ok() {
+        vec![db::Word {
+            word: "benchmark".into(),
+            transcription: "/ˈbentʃmɑːk/".into(),
+            translation: "эталонный тест".into(),
+            frequency: 1,
+        }]
+    } else {
+        db::load_words()
+    };
 
     let menu = Menu::new();
     let quit_item = MenuItem::new("Quit", true, None);
