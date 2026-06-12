@@ -94,13 +94,21 @@ pub struct CardView<'a> {
 }
 
 impl<'a> CardView<'a> {
+    /// Fade-in progress (0..1) of the transcription and translation lines at
+    /// the current elapsed time. Shared by width computation and painting.
+    fn eases(&self) -> (f32, f32) {
+        (
+            fade_factor(self.elapsed, self.transcription_delay, self.fade_duration),
+            fade_factor(self.elapsed, self.translation_delay, self.fade_duration),
+        )
+    }
+
     pub fn compute_width(&self, ui: &egui::Ui) -> f32 {
         let word_w = measure_text_width(ui, self.word, WORD_FONT_SIZE);
         let trans_w = measure_text_width(ui, self.transcription, SUB_FONT_SIZE);
         let transl_w = measure_text_width(ui, self.translation, SUB_FONT_SIZE);
 
-        let trans_ease = fade_factor(self.elapsed, self.transcription_delay, self.fade_duration);
-        let transl_ease = fade_factor(self.elapsed, self.translation_delay, self.fade_duration);
+        let (trans_ease, transl_ease) = self.eases();
 
         let initial = smoothstep(self.elapsed / WIDTH_TRANSITION);
         let from = self.prev_width - 2.0 * INNER_MARGIN;
@@ -133,8 +141,7 @@ impl<'a> CardView<'a> {
             .rect_filled(widget_rect, CORNER_RADIUS, BG_COLOR);
 
         let inner = widget_rect.shrink(INNER_MARGIN);
-        let trans_ease = fade_factor(self.elapsed, self.transcription_delay, self.fade_duration);
-        let transl_ease = fade_factor(self.elapsed, self.translation_delay, self.fade_duration);
+        let (trans_ease, transl_ease) = self.eases();
 
         let mut content_h = WORD_FONT_SIZE;
         if trans_ease > 0.01 {

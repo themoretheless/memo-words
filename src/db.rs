@@ -9,56 +9,99 @@ pub struct Word {
     pub frequency: i32,
 }
 
-/// Load words from MongoDB, falling back to a small built-in set whenever the
-/// database is unavailable or empty. This keeps the overlay functional out of
-/// the box, without requiring `brew services start mongodb-community` first.
-pub fn load_words() -> Vec<Word> {
-    let words = load_from_mongo();
-    if words.is_empty() {
-        eprintln!(
-            "Using built-in fallback word set ({} words).",
-            FALLBACK.len()
-        );
-        return fallback_words();
-    }
-    words
+/// A place words can be loaded from. Decoupling the app from MongoDB behind
+/// this trait (DIP) lets `main` wire in any concrete source and lets tests use
+/// an in-memory one without a database.
+pub trait WordSource {
+    fn load(&self) -> Vec<Word>;
 }
 
-fn load_from_mongo() -> Vec<Word> {
-    let rt = tokio::runtime::Runtime::new().expect("Failed to create tokio runtime");
-    rt.block_on(async {
-        let client = match mongodb::Client::with_uri_str("mongodb://localhost:27017").await {
-            Ok(c) => c,
-            Err(e) => {
-                eprintln!("MongoDB connection failed: {e}");
-                eprintln!("Start MongoDB: brew services start mongodb-community");
-                return Vec::new();
-            }
-        };
+/// Loads from a MongoDB collection, returning an empty vec on any failure so a
+/// caller can fall back gracefully.
+pub struct MongoWordSource {
+    pub uri: String,
+    pub database: String,
+    pub collection: String,
+}
 
-        let collection = client.database("english_words").collection::<Word>("words");
-
-        let mut cursor = match collection.find(mongodb::bson::doc! {}).await {
-            Ok(c) => c,
-            Err(e) => {
-                eprintln!("Failed to query words: {e}");
-                return Vec::new();
-            }
-        };
-
-        let mut words = Vec::new();
-        while cursor.advance().await.unwrap_or(false) {
-            if let Ok(word) = cursor.deserialize_current() {
-                words.push(word);
-            }
+impl Default for MongoWordSource {
+    fn default() -> Self {
+        Self {
+            uri: "mongodb://localhost:27017".to_string(),
+            database: "english_words".to_string(),
+            collection: "words".to_string(),
         }
+    }
+}
 
+impl WordSource for MongoWordSource {
+    fn load(&self) -> Vec<Word> {
+        let rt = tokio::runtime::Runtime::new().expect("Failed to create tokio runtime");
+        rt.block_on(async {
+            let client = match mongodb::Client::with_uri_str(&self.uri).await {
+                Ok(c) => c,
+                Err(e) => {
+                    eprintln!("MongoDB connection failed: {e}");
+                    eprintln!("Start MongoDB: brew services start mongodb-community");
+                    return Vec::new();
+                }
+            };
+
+            let collection = client
+                .database(&self.database)
+                .collection::<Word>(&self.collection);
+
+            let mut cursor = match collection.find(mongodb::bson::doc! {}).await {
+                Ok(c) => c,
+                Err(e) => {
+                    eprintln!("Failed to query words: {e}");
+                    return Vec::new();
+                }
+            };
+
+            let mut words = Vec::new();
+            while cursor.advance().await.unwrap_or(false) {
+                if let Ok(word) = cursor.deserialize_current() {
+                    words.push(word);
+                }
+            }
+
+            if words.is_empty() {
+                eprintln!("No words found. Run: mongosh english_words seed_words.js");
+            }
+
+            words
+        })
+    }
+}
+
+/// A fixed in-memory word set. Used for the benchmark harness and tests, and as
+/// the built-in fallback deck.
+pub struct StaticWordSource(pub Vec<Word>);
+
+impl WordSource for StaticWordSource {
+    fn load(&self) -> Vec<Word> {
+        self.0.clone()
+    }
+}
+
+/// Wraps a primary source and substitutes the built-in fallback deck whenever
+/// the primary yields nothing (Decorator). Keeps the "Mongo, else fallback"
+/// policy out of `main` and composable with any `WordSource`.
+pub struct WithFallback<S: WordSource>(pub S);
+
+impl<S: WordSource> WordSource for WithFallback<S> {
+    fn load(&self) -> Vec<Word> {
+        let words = self.0.load();
         if words.is_empty() {
-            eprintln!("No words found. Run: mongosh english_words seed_words.js");
+            eprintln!(
+                "Using built-in fallback word set ({} words).",
+                FALLBACK.len()
+            );
+            return fallback_words();
         }
-
         words
-    })
+    }
 }
 
 fn fallback_words() -> Vec<Word> {
