@@ -3,13 +3,13 @@ use crate::db::Word;
 use crate::ui::{self, CardView};
 use eframe::egui;
 use muda::MenuEvent;
+use rand::RngExt;
 use rand::rng;
 use rand::seq::IndexedRandom;
-use rand::RngExt;
 use std::collections::{HashSet, VecDeque};
+use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc::{Receiver, Sender};
-use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 // Repaint cadence while a card is animating in (word -> transcription ->
@@ -127,7 +127,9 @@ impl App {
     fn fill_screen(&self, ctx: &egui::Context) {
         if let Some(screen) = ctx.input(|i| i.viewport().monitor_size) {
             ctx.send_viewport_cmd(egui::ViewportCommand::OuterPosition(egui::pos2(0.0, 0.0)));
-            ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(egui::vec2(screen.x, screen.y)));
+            ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(egui::vec2(
+                screen.x, screen.y,
+            )));
         }
     }
 
@@ -284,14 +286,22 @@ mod tests {
 
     #[test]
     fn roll_interval_no_jitter_is_exact() {
-        let cfg = Config { interval_secs: 30, jitter_secs: 0, ..Config::default() };
+        let cfg = Config {
+            interval_secs: 30,
+            jitter_secs: 0,
+            ..Config::default()
+        };
         let app = test_app(5, cfg);
         assert_eq!(app.roll_interval(), Duration::from_secs(30));
     }
 
     #[test]
     fn roll_interval_with_jitter_stays_in_range() {
-        let cfg = Config { interval_secs: 30, jitter_secs: 5, ..Config::default() };
+        let cfg = Config {
+            interval_secs: 30,
+            jitter_secs: 5,
+            ..Config::default()
+        };
         let app = test_app(5, cfg);
         for _ in 0..1000 {
             let s = app.roll_interval().as_secs();
@@ -301,7 +311,11 @@ mod tests {
 
     #[test]
     fn roll_interval_never_below_one_second() {
-        let cfg = Config { interval_secs: 2, jitter_secs: 10, ..Config::default() };
+        let cfg = Config {
+            interval_secs: 2,
+            jitter_secs: 10,
+            ..Config::default()
+        };
         let app = test_app(5, cfg);
         for _ in 0..1000 {
             assert!(app.roll_interval() >= Duration::from_secs(1));

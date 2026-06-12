@@ -27,8 +27,12 @@ pub fn setup_visuals(ctx: &egui::Context) {
 pub fn load_fonts(ctx: &egui::Context) {
     let mut fonts = egui::FontDefinitions::default();
     if let Ok(data) = std::fs::read("/System/Library/Fonts/Supplemental/Arial Unicode.ttf") {
-        fonts.font_data.insert("arial_unicode".into(), Arc::new(egui::FontData::from_owned(data)));
-        fonts.families
+        fonts.font_data.insert(
+            "arial_unicode".into(),
+            Arc::new(egui::FontData::from_owned(data)),
+        );
+        fonts
+            .families
             .get_mut(&egui::FontFamily::Proportional)
             .unwrap()
             .push("arial_unicode".into());
@@ -47,7 +51,11 @@ pub fn fade_factor(elapsed: f32, delay: f32, fade_duration: f32) -> f32 {
 
 pub fn measure_text_width(ui: &egui::Ui, text: &str, size: f32) -> f32 {
     ui.painter()
-        .layout_no_wrap(text.into(), egui::FontId::proportional(size), egui::Color32::WHITE)
+        .layout_no_wrap(
+            text.into(),
+            egui::FontId::proportional(size),
+            egui::Color32::WHITE,
+        )
         .rect
         .width()
 }
@@ -64,9 +72,13 @@ pub fn centered_text(ui: &mut egui::Ui, text: &str, size: f32, color: egui::Colo
     );
     let text_w = galley.rect.width();
     let avail = ui.available_width();
-    let (rect, _) = ui.allocate_exact_size(egui::vec2(avail, galley.rect.height()), egui::Sense::hover());
+    let (rect, _) = ui.allocate_exact_size(
+        egui::vec2(avail, galley.rect.height()),
+        egui::Sense::hover(),
+    );
     let x = rect.min.x + (avail - text_w) / 2.0;
-    ui.painter().galley(egui::pos2(x, rect.min.y), galley, color);
+    ui.painter()
+        .galley(egui::pos2(x, rect.min.y), galley, color);
 }
 
 pub struct CardView<'a> {
@@ -109,23 +121,28 @@ impl<'a> CardView<'a> {
         };
         let y = match self.corner {
             Corner::TopLeft | Corner::TopRight => screen.min.y + SCREEN_MARGIN,
-            Corner::BottomLeft | Corner::BottomRight => screen.max.y - WIDGET_HEIGHT - SCREEN_MARGIN,
+            Corner::BottomLeft | Corner::BottomRight => {
+                screen.max.y - WIDGET_HEIGHT - SCREEN_MARGIN
+            }
         };
 
-        let widget_rect = egui::Rect::from_min_size(
-            egui::pos2(x, y),
-            egui::vec2(widget_w, WIDGET_HEIGHT),
-        );
+        let widget_rect =
+            egui::Rect::from_min_size(egui::pos2(x, y), egui::vec2(widget_w, WIDGET_HEIGHT));
 
-        ui.painter().rect_filled(widget_rect, CORNER_RADIUS, BG_COLOR);
+        ui.painter()
+            .rect_filled(widget_rect, CORNER_RADIUS, BG_COLOR);
 
         let inner = widget_rect.shrink(INNER_MARGIN);
         let trans_ease = fade_factor(self.elapsed, self.transcription_delay, self.fade_duration);
         let transl_ease = fade_factor(self.elapsed, self.translation_delay, self.fade_duration);
 
         let mut content_h = WORD_FONT_SIZE;
-        if trans_ease > 0.01 { content_h += 6.0 * trans_ease + SUB_FONT_SIZE; }
-        if transl_ease > 0.01 { content_h += 4.0 * transl_ease + SUB_FONT_SIZE; }
+        if trans_ease > 0.01 {
+            content_h += 6.0 * trans_ease + SUB_FONT_SIZE;
+        }
+        if transl_ease > 0.01 {
+            content_h += 4.0 * transl_ease + SUB_FONT_SIZE;
+        }
         let top_pad = ((inner.height() - content_h) / 2.0).max(0.0);
 
         let mut child = ui.new_child(egui::UiBuilder::new().max_rect(inner));
@@ -136,15 +153,23 @@ impl<'a> CardView<'a> {
             if trans_ease > 0.01 {
                 ui.add_space(6.0 * trans_ease);
                 let a = (trans_ease * 180.0) as u8;
-                centered_text(ui, self.transcription, SUB_FONT_SIZE,
-                    egui::Color32::from_rgba_unmultiplied(180, 180, 180, a));
+                centered_text(
+                    ui,
+                    self.transcription,
+                    SUB_FONT_SIZE,
+                    egui::Color32::from_rgba_unmultiplied(180, 180, 180, a),
+                );
             }
 
             if transl_ease > 0.01 {
                 ui.add_space(4.0 * transl_ease);
                 let a = (transl_ease * 140.0) as u8;
-                centered_text(ui, self.translation, SUB_FONT_SIZE,
-                    egui::Color32::from_rgba_unmultiplied(140, 140, 140, a));
+                centered_text(
+                    ui,
+                    self.translation,
+                    SUB_FONT_SIZE,
+                    egui::Color32::from_rgba_unmultiplied(140, 140, 140, a),
+                );
             }
         });
     }

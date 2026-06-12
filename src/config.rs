@@ -15,7 +15,12 @@ pub enum Corner {
 
 impl Corner {
     fn parse(s: &str) -> Option<Self> {
-        match s.trim().to_ascii_lowercase().replace(['_', ' '], "-").as_str() {
+        match s
+            .trim()
+            .to_ascii_lowercase()
+            .replace(['_', ' '], "-")
+            .as_str()
+        {
             "top-left" => Some(Corner::TopLeft),
             "top-right" => Some(Corner::TopRight),
             "bottom-left" => Some(Corner::BottomLeft),
