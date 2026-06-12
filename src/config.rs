@@ -28,6 +28,7 @@ impl Corner {
 #[derive(Debug, Clone, Copy)]
 pub struct Config {
     pub interval_secs: u64,
+    pub jitter_secs: u64,
     pub transcription_delay: f32,
     pub translation_delay: f32,
     pub fade_duration: f32,
@@ -38,6 +39,7 @@ impl Default for Config {
     fn default() -> Self {
         Self {
             interval_secs: 30,
+            jitter_secs: 0,
             transcription_delay: 5.0,
             translation_delay: 10.0,
             fade_duration: 1.0,
@@ -66,6 +68,11 @@ impl Config {
                 "interval_secs" => {
                     if let Ok(v) = value.parse::<u64>() {
                         cfg.interval_secs = v.max(1);
+                    }
+                }
+                "jitter_secs" => {
+                    if let Ok(v) = value.parse::<u64>() {
+                        cfg.jitter_secs = v;
                     }
                 }
                 "transcription_delay" => {

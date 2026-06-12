@@ -4,7 +4,7 @@ use crate::ui::{self, CardView};
 use eframe::egui;
 use muda::MenuEvent;
 use rand::seq::SliceRandom;
-use rand::thread_rng;
+use rand::{thread_rng, Rng};
 use std::collections::VecDeque;
 use std::time::{Duration, Instant};
 
@@ -73,6 +73,19 @@ impl App {
         self.current_idx = Some(idx);
         self.shown_at = Some(Instant::now());
         self.last_show = Instant::now();
+        self.word_interval = self.roll_interval();
+    }
+
+    // Time the current word stays up: base interval optionally jittered by
+    // +/- jitter_secs so the cadence doesn't feel metronomic. Clamped to >=1s.
+    fn roll_interval(&self) -> Duration {
+        let base = self.cfg.interval_secs as i64;
+        if self.cfg.jitter_secs == 0 {
+            return Duration::from_secs(base.max(1) as u64);
+        }
+        let j = self.cfg.jitter_secs as i64;
+        let delta = thread_rng().gen_range(-j..=j);
+        Duration::from_secs((base + delta).max(1) as u64)
     }
 
     fn fill_screen(&self, ctx: &egui::Context) {
