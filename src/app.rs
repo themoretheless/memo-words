@@ -10,6 +10,13 @@ use std::time::{Duration, Instant};
 
 const REPAINT_INTERVAL: Duration = Duration::from_millis(50);
 
+#[derive(Clone)]
+pub struct MenuIds {
+    pub next: muda::MenuId,
+    pub pause: muda::MenuId,
+    pub quit: muda::MenuId,
+}
+
 pub struct App {
     words: Vec<Word>,
     recent: VecDeque<usize>,
@@ -19,13 +26,14 @@ pub struct App {
     last_show: Instant,
     prev_width: f32,
     started: bool,
-    quit_id: muda::MenuId,
+    menu_ids: MenuIds,
+    paused: bool,
     cfg: Config,
     word_interval: Duration,
 }
 
 impl App {
-    pub fn new(words: Vec<Word>, quit_id: muda::MenuId, cfg: Config) -> Self {
+    pub fn new(words: Vec<Word>, menu_ids: MenuIds, cfg: Config) -> Self {
         // Sliding window of recently shown words: avoids short-term repeats
         // while still letting frequent words recur over time. Sized to ~a
         // third of the deck, capped so large decks stay varied and small
@@ -40,7 +48,8 @@ impl App {
             last_show: Instant::now(),
             prev_width: ui::MIN_WIDTH,
             started: false,
-            quit_id,
+            menu_ids,
+            paused: false,
             cfg,
             word_interval: Duration::from_secs(cfg.interval_secs),
         }
@@ -113,13 +122,21 @@ impl eframe::App for App {
         }
 
         if let Ok(event) = MenuEvent::receiver().try_recv() {
-            if event.id() == &self.quit_id {
+            let id = event.id();
+            if id == &self.menu_ids.quit {
                 ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                 return;
+            } else if id == &self.menu_ids.pause {
+                self.paused = !self.paused;
+                // Reset the timer so resuming gives a full interval rather
+                // than instantly advancing on leftover elapsed time.
+                self.last_show = Instant::now();
+            } else if id == &self.menu_ids.next {
+                self.next_word();
             }
         }
 
-        if self.last_show.elapsed() >= self.word_interval {
+        if !self.paused && self.last_show.elapsed() >= self.word_interval {
             self.next_word();
         }
 
