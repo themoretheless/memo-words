@@ -1,12 +1,10 @@
 use crate::config::Config;
-use crate::db::Word;
+use crate::deck::Deck;
 use crate::ui::{self, CardView};
 use eframe::egui;
 use muda::MenuEvent;
 use rand::RngExt;
 use rand::rng;
-use rand::seq::IndexedRandom;
-use std::collections::{HashSet, VecDeque};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc::{Receiver, Sender};
@@ -26,12 +24,11 @@ pub struct MenuIds {
     pub quit: muda::MenuId,
 }
 
+/// The eframe adapter (a humble object): it owns the timing, tray-menu wiring,
+/// and rendering, and delegates word rotation to `Deck`. It deliberately holds
+/// no selection or word-storage logic of its own.
 pub struct App {
-    words: Vec<Word>,
-    recent: VecDeque<usize>,
-    recent_set: HashSet<usize>,
-    recent_cap: usize,
-    current_idx: Option<usize>,
+    deck: Deck,
     shown_at: Option<Instant>,
     last_show: Instant,
     prev_width: f32,
@@ -47,19 +44,10 @@ pub struct App {
 }
 
 impl App {
-    pub fn new(words: Vec<Word>, menu_ids: MenuIds, cfg: Config) -> Self {
-        // Sliding window of recently shown words: avoids short-term repeats
-        // while still letting frequent words recur over time. Sized to ~a
-        // third of the deck, capped so large decks stay varied and small
-        // decks don't exclude everything.
-        let recent_cap = (words.len() / 3).min(100);
+    pub fn new(deck: Deck, menu_ids: MenuIds, cfg: Config) -> Self {
         let (menu_tx, menu_rx) = std::sync::mpsc::channel();
         Self {
-            words,
-            recent: VecDeque::new(),
-            recent_set: HashSet::new(),
-            recent_cap,
-            current_idx: None,
+            deck,
             shown_at: None,
             last_show: Instant::now(),
             prev_width: ui::MIN_WIDTH,
@@ -75,40 +63,18 @@ impl App {
         }
     }
 
-    fn next_word(&mut self) {
-        if self.words.is_empty() {
-            return;
-        }
-
-        let available: Vec<usize> = (0..self.words.len())
-            .filter(|i| !self.recent_set.contains(i))
-            .collect();
-
-        // `frequency` is a rank (1 = most common), so weight by its inverse:
-        // common words surface more often, rarer ones still appear. Rank <= 0
-        // (missing data) falls back to the rarest tier.
-        let rng = &mut rng();
-        let idx = available
-            .choose_weighted(rng, |&i| 1.0 / self.words[i].frequency.max(1) as f64)
-            .copied()
-            .unwrap();
-
-        if self.recent_cap > 0 {
-            self.recent.push_back(idx);
-            self.recent_set.insert(idx);
-            while self.recent.len() > self.recent_cap {
-                if let Some(old) = self.recent.pop_front() {
-                    self.recent_set.remove(&old);
-                }
-            }
-        }
-        self.current_idx = Some(idx);
+    /// Show the next word: advance the deck, reset the timers, roll a fresh
+    /// interval, and speak it if configured.
+    fn advance(&mut self) {
+        self.deck.advance();
         self.shown_at = Some(Instant::now());
         self.last_show = Instant::now();
         self.word_interval = self.roll_interval();
 
-        if self.cfg.speak {
-            speak_word(&self.words[idx].word);
+        if self.cfg.speak
+            && let Some(w) = self.deck.current()
+        {
+            speak_word(&w.word);
         }
     }
 
@@ -172,7 +138,7 @@ impl eframe::App for App {
             if let Some(tx) = self.menu_tx.take() {
                 Self::spawn_menu_watcher(&ctx, tx);
             }
-            self.next_word();
+            self.advance();
 
             if self.bench {
                 // Pin the card in its fully-settled, static state so the whole
@@ -201,12 +167,12 @@ impl eframe::App for App {
                 // than instantly advancing on leftover elapsed time.
                 self.last_show = Instant::now();
             } else if id == self.menu_ids.next {
-                self.next_word();
+                self.advance();
             }
         }
 
         if !self.paused && self.last_show.elapsed() >= self.word_interval {
-            self.next_word();
+            self.advance();
         }
 
         let elapsed = self
@@ -214,8 +180,10 @@ impl eframe::App for App {
             .map(|t| t.elapsed().as_secs_f32())
             .unwrap_or(0.0);
 
-        if let Some(idx) = self.current_idx {
-            let w = &self.words[idx];
+        // Read-only borrow of the deck for rendering; defer the prev_width
+        // write until that borrow ends.
+        let mut new_prev_width = None;
+        if let Some(w) = self.deck.current() {
             let view = CardView {
                 word: &w.word,
                 transcription: &w.transcription,
@@ -228,8 +196,11 @@ impl eframe::App for App {
                 corner: self.cfg.corner,
             };
             let widget_w = view.compute_width(ui);
-            self.prev_width = widget_w;
             view.paint(ui, widget_w);
+            new_prev_width = Some(widget_w);
+        }
+        if let Some(w) = new_prev_width {
+            self.prev_width = w;
         }
 
         // Drive repaints by state: animate at ~60 fps while the card fades in,
@@ -265,7 +236,8 @@ fn speak_word(_word: &str) {}
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::Config;
+    use crate::db::Word;
+    use crate::selector::FrequencyWeighted;
 
     fn test_app(n: usize, cfg: Config) -> App {
         let words = (0..n)
@@ -276,12 +248,13 @@ mod tests {
                 frequency: i as i32 + 1,
             })
             .collect();
+        let deck = Deck::new(words, Box::new(FrequencyWeighted));
         let ids = MenuIds {
             next: muda::MenuId::from("next"),
             pause: muda::MenuId::from("pause"),
             quit: muda::MenuId::from("quit"),
         };
-        App::new(words, ids, cfg)
+        App::new(deck, ids, cfg)
     }
 
     #[test]
@@ -320,44 +293,5 @@ mod tests {
         for _ in 0..1000 {
             assert!(app.roll_interval() >= Duration::from_secs(1));
         }
-    }
-
-    #[test]
-    fn next_word_avoids_repeats_within_recent_window() {
-        // cap = 10/3 = 3, so any run of consecutive picks must be distinct.
-        let mut app = test_app(10, Config::default());
-        let mut last = None;
-        for _ in 0..50 {
-            app.next_word();
-            let idx = app.current_idx.unwrap();
-            assert_ne!(Some(idx), last, "same word shown twice in a row");
-            last = Some(idx);
-        }
-    }
-
-    #[test]
-    fn recent_window_and_set_stay_consistent_and_bounded() {
-        let mut app = test_app(30, Config::default());
-        let cap = app.recent_cap;
-        assert!(cap > 0);
-        for _ in 0..200 {
-            app.next_word();
-            assert!(app.recent.len() <= cap);
-            // The mirror set is kept exactly in sync with the deque.
-            assert_eq!(app.recent.len(), app.recent_set.len());
-            for i in &app.recent {
-                assert!(app.recent_set.contains(i));
-            }
-        }
-    }
-
-    #[test]
-    fn single_word_deck_disables_recent_window() {
-        // recent_cap = 1/3 = 0, so the lone word can repeat without panicking.
-        let mut app = test_app(1, Config::default());
-        app.next_word();
-        app.next_word();
-        assert_eq!(app.current_idx, Some(0));
-        assert!(app.recent.is_empty());
     }
 }

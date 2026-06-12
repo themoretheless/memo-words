@@ -1,24 +1,33 @@
 mod app;
 mod config;
 mod db;
+mod deck;
+mod selector;
 mod tray;
 mod ui;
 
+use db::{MongoWordSource, StaticWordSource, WithFallback, Word, WordSource};
+use deck::Deck;
 use muda::{Menu, MenuItem};
+use selector::FrequencyWeighted;
 use tray_icon::TrayIconBuilder;
 
 fn main() -> eframe::Result<()> {
     let cfg = config::Config::load();
-    let words = if std::env::var("MEMO_BENCH").is_ok() {
-        vec![db::Word {
+
+    // Composition root: pick the concrete word source here, behind the
+    // WordSource trait, so nothing downstream depends on MongoDB directly.
+    let source: Box<dyn WordSource> = if std::env::var("MEMO_BENCH").is_ok() {
+        Box::new(StaticWordSource(vec![Word {
             word: "benchmark".into(),
             transcription: "/ˈbentʃmɑːk/".into(),
             translation: "эталонный тест".into(),
             frequency: 1,
-        }]
+        }]))
     } else {
-        db::load_words()
+        Box::new(WithFallback(MongoWordSource::default()))
     };
+    let deck = Deck::new(source.load(), Box::new(FrequencyWeighted));
 
     let menu = Menu::new();
     let next_item = MenuItem::new("Next word", true, None);
@@ -57,7 +66,7 @@ fn main() -> eframe::Result<()> {
         Box::new(|cc| {
             ui::setup_visuals(&cc.egui_ctx);
             ui::load_fonts(&cc.egui_ctx);
-            Ok(Box::new(app::App::new(words, menu_ids.clone(), cfg)))
+            Ok(Box::new(app::App::new(deck, menu_ids.clone(), cfg)))
         }),
     )
 }
