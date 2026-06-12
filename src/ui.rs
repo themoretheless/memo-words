@@ -54,10 +54,14 @@ pub fn measure_text_width(ui: &egui::Ui, text: &str, size: f32) -> f32 {
 }
 
 pub fn centered_text(ui: &mut egui::Ui, text: &str, size: f32, color: egui::Color32) {
+    // Lay out with PLACEHOLDER so the galley's cache key (which epaint hashes
+    // including color) stays constant as the fade alpha changes each frame.
+    // The real color is applied at draw time below, turning per-frame fade
+    // re-layouts into galley-cache hits. Geometry is color-independent.
     let galley = ui.painter().layout_no_wrap(
         text.into(),
         egui::FontId::proportional(size),
-        color,
+        egui::Color32::PLACEHOLDER,
     );
     let text_w = galley.rect.width();
     let avail = ui.available_width();
