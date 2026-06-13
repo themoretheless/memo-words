@@ -1,4 +1,5 @@
 use serde::Deserialize;
+use std::time::Duration;
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct Word {
@@ -38,11 +39,24 @@ impl WordSource for MongoWordSource {
     fn load(&self) -> Vec<Word> {
         let rt = tokio::runtime::Runtime::new().expect("Failed to create tokio runtime");
         rt.block_on(async {
-            let client = match mongodb::Client::with_uri_str(&self.uri).await {
+            let mut options = match mongodb::options::ClientOptions::parse(&self.uri).await {
+                Ok(o) => o,
+                Err(e) => {
+                    eprintln!("MongoDB connection string invalid: {e}");
+                    return Vec::new();
+                }
+            };
+            // Fail over to the fallback deck within a couple of seconds instead
+            // of blocking the UI for the driver's default 30s server-selection
+            // timeout when no MongoDB is reachable (the common "not running"
+            // case). The card should appear promptly, not after a long stall.
+            options.server_selection_timeout = Some(Duration::from_secs(2));
+            options.connect_timeout = Some(Duration::from_secs(2));
+
+            let client = match mongodb::Client::with_options(options) {
                 Ok(c) => c,
                 Err(e) => {
-                    eprintln!("MongoDB connection failed: {e}");
-                    eprintln!("Start MongoDB: brew services start mongodb-community");
+                    eprintln!("MongoDB client init failed: {e}");
                     return Vec::new();
                 }
             };
@@ -54,7 +68,13 @@ impl WordSource for MongoWordSource {
             let mut cursor = match collection.find(mongodb::bson::doc! {}).await {
                 Ok(c) => c,
                 Err(e) => {
+                    // A real connection failure (server down/unreachable)
+                    // surfaces here, not at parse time, so the actionable hint
+                    // belongs on this branch.
                     eprintln!("Failed to query words: {e}");
+                    eprintln!(
+                        "Is MongoDB running? Start it: brew services start mongodb-community"
+                    );
                     return Vec::new();
                 }
             };
