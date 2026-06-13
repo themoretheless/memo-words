@@ -1,0 +1,36 @@
+# cargo-deny configuration. Supply-chain checks run in CI (see
+# .github/workflows/ci.yml) and locally with `cargo deny check`.
+#
+# CI runs `advisories`, `bans`, and `sources`. The `licenses` check is
+# intentionally not enforced: every dependency here is a standard permissive
+# license, and maintaining an exhaustive allow-list for a personal, unpublished
+# app would break CI on routine dependency bumps for no real benefit.
+
+[advisories]
+# Security vulnerabilities and yanked crates fail the build. The dependency
+# graph also pulls in a handful of unmaintained, Linux-only GTK crates through
+# the tray-icon stack; they are never compiled on macOS (this app's only
+# target), so they are ignored here rather than failing CI on a platform that
+# never builds them.
+ignore = [
+    "RUSTSEC-2024-0413", # atk -- GTK3 bindings, unmaintained (Linux only)
+    "RUSTSEC-2024-0416", # atk-sys -- GTK3 bindings, unmaintained (Linux only)
+    "RUSTSEC-2024-0412", # gdk -- GTK3 bindings, unmaintained (Linux only)
+    "RUSTSEC-2024-0418", # gdk-sys -- GTK3 bindings, unmaintained (Linux only)
+    "RUSTSEC-2024-0415", # gtk -- GTK3 bindings, unmaintained (Linux only)
+    "RUSTSEC-2024-0420", # gtk-sys -- GTK3 bindings, unmaintained (Linux only)
+    "RUSTSEC-2024-0419", # gtk3-macros -- GTK3 bindings, unmaintained (Linux only)
+    "RUSTSEC-2024-0370", # proc-macro-error -- unmaintained (transitive)
+]
+
+[bans]
+# Duplicate transitive versions are upstream's business, not ours -- allow them
+# rather than flooding the CI log with dependency trees. A wildcard ("*")
+# version in our own Cargo.toml, however, is a real smell and fails.
+multiple-versions = "allow"
+wildcards = "deny"
+
+[sources]
+# Only crates.io is trusted; any unknown registry or git source fails.
+unknown-registry = "deny"
+unknown-git = "deny"
