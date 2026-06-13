@@ -30,6 +30,13 @@ impl Corner {
     }
 }
 
+/// Upper bound for second-valued knobs (`interval_secs`, `jitter_secs`).
+/// Anything past a day is meaningless for an ambient word timer, and clamping
+/// also keeps the values safely inside `i64` range: `roll_interval` casts them
+/// with `as i64`, so an unclamped value above `i64::MAX` would wrap negative,
+/// make the jitter range `-j..=j` empty, and panic `rand`'s `random_range`.
+const MAX_SECS: u64 = 86_400;
+
 #[derive(Debug, Clone, Copy)]
 pub struct Config {
     pub interval_secs: u64,
@@ -81,12 +88,12 @@ impl Config {
             match key {
                 "interval_secs" => {
                     if let Ok(v) = value.parse::<u64>() {
-                        cfg.interval_secs = v.max(1);
+                        cfg.interval_secs = v.clamp(1, MAX_SECS);
                     }
                 }
                 "jitter_secs" => {
                     if let Ok(v) = value.parse::<u64>() {
-                        cfg.jitter_secs = v;
+                        cfg.jitter_secs = v.min(MAX_SECS);
                     }
                 }
                 "transcription_delay" => {
@@ -172,6 +179,17 @@ mod tests {
         let cfg = Config::default().merge_str("interval_secs = 0\nfade_duration = 0");
         assert_eq!(cfg.interval_secs, 1); // clamped to >= 1
         assert!(cfg.fade_duration >= 0.01); // clamped to >= 0.01
+    }
+
+    #[test]
+    fn merge_str_clamps_huge_second_values() {
+        // 1e19 fits in u64 but exceeds i64::MAX; left unclamped it would wrap
+        // to a negative i64 in roll_interval and panic rand. Clamp keeps both
+        // knobs at the sane upper bound instead.
+        let cfg = Config::default()
+            .merge_str("interval_secs = 10000000000000000000\njitter_secs = 10000000000000000000");
+        assert_eq!(cfg.interval_secs, 86_400);
+        assert_eq!(cfg.jitter_secs, 86_400);
     }
 
     #[test]
