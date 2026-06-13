@@ -78,6 +78,16 @@ impl App {
         }
     }
 
+    // Elapsed time (seconds since the word appeared) at which the card is fully
+    // settled and repaints can stop. The transcription and translation fade in
+    // at independent delays, so the card isn't done until the LATER of the two
+    // finishes. Using only translation_delay here meant a transcription_delay
+    // past the translation fade window stopped repaints before the
+    // transcription ever rendered, hiding it entirely.
+    fn anim_end(&self) -> f32 {
+        self.cfg.transcription_delay.max(self.cfg.translation_delay) + self.cfg.fade_duration
+    }
+
     // Time the current word stays up: base interval optionally jittered by
     // +/- jitter_secs so the cadence doesn't feel metronomic. Clamped to >=1s.
     fn roll_interval(&self) -> Duration {
@@ -206,7 +216,7 @@ impl eframe::App for App {
         // Drive repaints by state: animate at ~60 fps while the card fades in,
         // sleep long while paused (a menu event wakes us), otherwise sleep until
         // the next word is due. A static card costs no frames.
-        let anim_end = self.cfg.translation_delay + self.cfg.fade_duration;
+        let anim_end = self.anim_end();
         if elapsed < anim_end {
             ctx.request_repaint_after(ANIM_FRAME);
         } else if self.paused {
@@ -293,5 +303,31 @@ mod tests {
         for _ in 0..1000 {
             assert!(app.roll_interval() >= Duration::from_secs(1));
         }
+    }
+
+    #[test]
+    fn anim_end_uses_the_later_fade() {
+        let cfg = Config {
+            transcription_delay: 5.0,
+            translation_delay: 10.0,
+            fade_duration: 1.0,
+            ..Config::default()
+        };
+        let app = test_app(5, cfg);
+        assert_eq!(app.anim_end(), 11.0);
+    }
+
+    #[test]
+    fn anim_end_covers_a_late_transcription_fade() {
+        // transcription_delay past the translation fade window must still be
+        // covered, otherwise the transcription line never gets painted.
+        let cfg = Config {
+            transcription_delay: 15.0,
+            translation_delay: 10.0,
+            fade_duration: 1.0,
+            ..Config::default()
+        };
+        let app = test_app(5, cfg);
+        assert_eq!(app.anim_end(), 16.0);
     }
 }
