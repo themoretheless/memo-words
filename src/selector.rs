@@ -19,8 +19,23 @@ pub struct FrequencyWeighted;
 impl WordSelector for FrequencyWeighted {
     fn choose(&self, candidates: &[usize], words: &[Word]) -> usize {
         *candidates
-            .choose_weighted(&mut rng(), |&i| 1.0 / words[i].frequency.max(1) as f64)
+            .choose_weighted(&mut rng(), |&i| weight(words[i].frequency))
             .expect("candidates non-empty")
+    }
+}
+
+/// Selection weight for a frequency rank. Rank 1 (most common) gets the
+/// largest weight and weight falls off as 1/rank. A missing, zero, or negative
+/// rank means "frequency unknown" (e.g. a MongoDB document without the field,
+/// which `#[serde(default)]` fills with 0) and is treated as the rarest tier.
+/// The old `1.0 / frequency.max(1)` did the opposite: it clamped rank 0 up to
+/// 1, handing unranked words the *maximum* weight and surfacing them most
+/// often, contradicting the doc above.
+fn weight(frequency: i32) -> f64 {
+    if frequency >= 1 {
+        1.0 / frequency as f64
+    } else {
+        1.0 / f64::from(i32::MAX)
     }
 }
 
@@ -58,5 +73,43 @@ mod tests {
         // Rank 1 has 100x the weight of rank 100, so it should dominate well
         // past a coin flip. Loose bound to stay non-flaky.
         assert!(common > 1500, "common chosen {common}/2000");
+    }
+
+    #[test]
+    fn missing_frequency_is_treated_as_rarest_not_most_common() {
+        // A word whose frequency field was absent in MongoDB deserializes to 0.
+        // It must surface far less than a real rank-1 word, not more.
+        let w = vec![
+            Word {
+                word: "common".into(),
+                transcription: String::new(),
+                translation: String::new(),
+                frequency: 1,
+            },
+            Word {
+                word: "unknown".into(),
+                transcription: String::new(),
+                translation: String::new(),
+                frequency: 0,
+            },
+        ];
+        let sel = FrequencyWeighted;
+        let mut common = 0;
+        for _ in 0..2000 {
+            if sel.choose(&[0, 1], &w) == 0 {
+                common += 1;
+            }
+        }
+        // weight(0) is ~1/i32::MAX, so the rank-1 word wins virtually always.
+        assert!(common > 1990, "common chosen {common}/2000");
+    }
+
+    #[test]
+    fn weight_ranks_correctly() {
+        // Most common (rank 1) outweighs rarer (rank 100) outweighs unknown (0).
+        assert!(weight(1) > weight(100));
+        assert!(weight(100) > weight(0));
+        assert!(weight(0) > 0.0); // must stay positive for choose_weighted
+        assert_eq!(weight(0), weight(-5)); // negatives are "unknown" too
     }
 }
