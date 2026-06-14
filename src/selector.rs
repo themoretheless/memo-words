@@ -49,12 +49,14 @@ mod tests {
                 word: "common".into(),
                 transcription: String::new(),
                 translation: String::new(),
+                example: String::new(),
                 frequency: 1,
             },
             Word {
                 word: "rare".into(),
                 transcription: String::new(),
                 translation: String::new(),
+                example: String::new(),
                 frequency: 100,
             },
         ]
@@ -84,12 +86,14 @@ mod tests {
                 word: "common".into(),
                 transcription: String::new(),
                 translation: String::new(),
+                example: String::new(),
                 frequency: 1,
             },
             Word {
                 word: "unknown".into(),
                 transcription: String::new(),
                 translation: String::new(),
+                example: String::new(),
                 frequency: 0,
             },
         ];

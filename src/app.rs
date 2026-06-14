@@ -78,14 +78,26 @@ impl App {
         }
     }
 
+    // When the example line starts fading in: just after the translation has
+    // settled, so the lines reveal in sequence (word, transcription,
+    // translation, example).
+    fn example_delay(&self) -> f32 {
+        self.cfg.translation_delay + self.cfg.fade_duration
+    }
+
     // Elapsed time (seconds since the word appeared) at which the card is fully
-    // settled and repaints can stop. The transcription and translation fade in
-    // at independent delays, so the card isn't done until the LATER of the two
-    // finishes. Using only translation_delay here meant a transcription_delay
-    // past the translation fade window stopped repaints before the
-    // transcription ever rendered, hiding it entirely.
-    fn anim_end(&self) -> f32 {
-        self.cfg.transcription_delay.max(self.cfg.translation_delay) + self.cfg.fade_duration
+    // settled and repaints can stop. The lines fade in at independent delays,
+    // so the card isn't done until the LAST one finishes. Using only
+    // translation_delay here meant a transcription_delay past the translation
+    // fade window stopped repaints before the transcription ever rendered,
+    // hiding it entirely. The example delay only counts when the current word
+    // actually has one, so example-less words don't repaint longer for nothing.
+    fn anim_end(&self, has_example: bool) -> f32 {
+        let mut last = self.cfg.transcription_delay.max(self.cfg.translation_delay);
+        if has_example {
+            last = last.max(self.example_delay());
+        }
+        last + self.cfg.fade_duration
     }
 
     // Time the current word stays up: base interval optionally jittered by
@@ -193,15 +205,20 @@ impl eframe::App for App {
         // Read-only borrow of the deck for rendering; defer the prev_width
         // write until that borrow ends.
         let mut new_prev_width = None;
+        let mut has_example = false;
+        let example_delay = self.example_delay();
         if let Some(w) = self.deck.current() {
+            has_example = !w.example.trim().is_empty();
             let view = CardView {
                 word: &w.word,
                 transcription: &w.transcription,
                 translation: &w.translation,
+                example: &w.example,
                 elapsed,
                 prev_width: self.prev_width,
                 transcription_delay: self.cfg.transcription_delay,
                 translation_delay: self.cfg.translation_delay,
+                example_delay,
                 fade_duration: self.cfg.fade_duration,
                 corner: self.cfg.corner,
             };
@@ -216,7 +233,7 @@ impl eframe::App for App {
         // Drive repaints by state: animate at ~60 fps while the card fades in,
         // sleep long while paused (a menu event wakes us), otherwise sleep until
         // the next word is due. A static card costs no frames.
-        let anim_end = self.anim_end();
+        let anim_end = self.anim_end(has_example);
         if elapsed < anim_end {
             ctx.request_repaint_after(ANIM_FRAME);
         } else if self.paused {
@@ -256,6 +273,7 @@ mod tests {
                 transcription: String::new(),
                 translation: String::new(),
                 frequency: i as i32 + 1,
+                example: String::new(),
             })
             .collect();
         let deck = Deck::new(words, Box::new(FrequencyWeighted));
@@ -314,7 +332,7 @@ mod tests {
             ..Config::default()
         };
         let app = test_app(5, cfg);
-        assert_eq!(app.anim_end(), 11.0);
+        assert_eq!(app.anim_end(false), 11.0);
     }
 
     #[test]
@@ -328,6 +346,23 @@ mod tests {
             ..Config::default()
         };
         let app = test_app(5, cfg);
-        assert_eq!(app.anim_end(), 16.0);
+        assert_eq!(app.anim_end(false), 16.0);
+    }
+
+    #[test]
+    fn anim_end_extends_for_the_example_line() {
+        // With an example present, repaints must run until its fade (which
+        // starts after the translation settles) finishes.
+        let cfg = Config {
+            transcription_delay: 5.0,
+            translation_delay: 10.0,
+            fade_duration: 1.0,
+            ..Config::default()
+        };
+        let app = test_app(5, cfg);
+        // example_delay = 10 + 1 = 11; end = 11 + 1 = 12.
+        assert_eq!(app.anim_end(true), 12.0);
+        // Without an example the end is unchanged.
+        assert_eq!(app.anim_end(false), 11.0);
     }
 }
