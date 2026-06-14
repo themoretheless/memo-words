@@ -26,6 +26,10 @@ calm-ambient identity (heavy motion, chrome, interactivity) are downranked.
   the translation (the payoff) outranks the phonetic transcription. The IPA used
   to render brighter than the meaning; now the order is headword > meaning > IPA >
   example, locked by a compile-time assertion. (Things 3, Reeder, Apple Dictionary)
+- **Symmetric exit settle** - `exit_duration` fades the whole card out before the
+  next word instead of hard-cutting, so words leave the way they arrive. Off by
+  default (hard cut), capped at half the interval, one `dim()` opacity multiplier
+  threaded through every painted colour. (iOS notification dismissal, Things 3)
 
 ## Top 10 (round 2)
 
@@ -35,7 +39,7 @@ the actual source. Notes record the feasibility findings.
 
 | # | Idea | Inspired by | Value | Effort | Risk | Status |
 |---|------|-------------|-------|--------|------|--------|
-| 1 | **Symmetric exit settle** - fade the current card out before advancing, so words leave the way they arrive instead of hard-cutting. `advance()` currently hard-cuts while entrances fade; this fills the missing half. Alpha-only (no geometry recompute), extra frames run only during the short exit | iOS notification dismissal, Things 3 rows | High | Low-Med | Low | next |
+| 1 | **Symmetric exit settle** - fade the current card out before advancing, so words leave the way they arrive instead of hard-cutting. Alpha-only via one `dim()` multiplier, off by default, capped at half the interval | iOS notification dismissal, Things 3 rows | High | Low-Med | Low | ✅ shipped |
 | 2 | **Answer-first type hierarchy** - the meaning outranks the IPA in size and brightness | Things 3, Reeder | High | Low | Low | ✅ shipped |
 | 3 | **Interleaved spaced recap** - occasionally re-show a word seen ~10-20 cards ago (pick from inside the recent ring at an older offset). Pure Rust in `deck.rs`, no UI; guard small decks and carve out the recent-window test invariant | Drops, Memrise spacing | Med | Low | Low | backlog |
 | 4 | **Faux-vibrancy material** - painter-faked top sheen gradient + 1px inner top highlight, mimicking macOS HUD/sidebar materials. Static, default-off, deliberately subtle (a bright highlight reads glossy and overlaps the shadow+border depth already shipped) | macOS NSVisualEffectView, Dynamic Island | Med | Med | Low | backlog |
