@@ -28,7 +28,8 @@ fn main() -> eframe::Result<()> {
     } else {
         Box::new(WithFallback(MongoWordSource::default()))
     };
-    let deck = Deck::new(source.load(), Box::new(FrequencyWeighted));
+    let deck =
+        Deck::new(source.load(), Box::new(FrequencyWeighted)).with_recap_chance(cfg.recap_chance);
 
     let menu = Menu::new();
     let next_item = MenuItem::new("Next word", true, None);
