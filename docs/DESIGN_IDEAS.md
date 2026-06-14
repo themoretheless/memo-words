@@ -11,7 +11,7 @@ Ranked by value-to-effort for this product. Status is updated as items ship.
 | # | Idea | Inspired by | Value | Effort | Risk | Status |
 |---|------|-------------|-------|--------|------|--------|
 | 1 | **Depth & edge definition** — soft drop shadow + 1px hairline border so the translucent card reads as a floating surface and stays legible on busy/light wallpapers | macOS widgets, iOS notification materials | High | Low | Low | ✅ shipped |
-| 2 | **Example sentence line** — a short usage example with the target word emphasized; the single biggest learning lever for vocab | Apple Dictionary, Drops context cards | High | Med | Med (needs dynamic card height + word wrap) | backlog |
+| 2 | **Example sentence line** — a short usage example; the single biggest learning lever for vocab. Code path shipped (single dim line, fits the fixed-height card, long examples ellipsized) and populated in the built-in fallback deck. **Production `seed_words.js` (350 words) still needs `example` fields** before it shows for Mongo-backed users; target-word emphasis deferred | Apple Dictionary, Drops context cards | High | Med | Med | ✅ code; seed pending |
 | 3 | **Adaptive contrast** — sample wallpaper luminance behind the card and tint the fill so it's always readable, light or dark desktop | macOS vibrancy / dynamic materials | High | High | Med | backlog |
 | 4 | **Part-of-speech accent** — a small colored pill (noun / verb / adj …); color-coding aids recall and adds life without noise | Drops, Memrise | Med | Med (needs POS data) | Low | backlog |
 | 5 | **Restrained entrance** — gentle scale 0.98→1.0 layered on the existing fade; presence without distraction (kept subtle for ambient) | iOS spring transitions | Med | Low | Med (motion can fight "calm") | backlog |
@@ -23,6 +23,8 @@ Ranked by value-to-effort for this product. Status is updated as items ship.
 
 ## Further backlog (beyond the current top 10)
 
+- **Populate `seed_words.js` with `example` fields** (350 words) so the example line shows for Mongo-backed users, not only the fallback deck (immediate follow-up to #2).
+- Target-word emphasis within the example sentence (brighter/bold the headword).
 - Etymology / word-family micro-line for deeper context.
 - Optional subtle chime on a new word (off by default).
 - Multi-monitor aware placement; smooth corner repositioning.

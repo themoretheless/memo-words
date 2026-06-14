@@ -70,6 +70,7 @@ mod tests {
                 transcription: String::new(),
                 translation: String::new(),
                 frequency: 1,
+                example: String::new(),
             })
             .collect();
         Deck::new(words, Box::new(FrequencyWeighted))

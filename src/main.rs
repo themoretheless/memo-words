@@ -23,6 +23,7 @@ fn main() -> eframe::Result<()> {
             transcription: "/ˈbentʃmɑːk/".into(),
             translation: "эталонный тест".into(),
             frequency: 1,
+            example: "We ran the benchmark twice.".into(),
         }]))
     } else {
         Box::new(WithFallback(MongoWordSource::default()))
