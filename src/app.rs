@@ -124,6 +124,17 @@ impl App {
         last + self.cfg.fade_duration
     }
 
+    // How long the card spends fading out before the next word. Zero (the
+    // default) means a hard cut. Capped at half the current interval so the fade
+    // never eats the whole word, however large exit_duration is configured.
+    fn exit_window(&self) -> Duration {
+        if self.cfg.exit_duration <= 0.0 {
+            return Duration::ZERO;
+        }
+        let cap = self.word_interval.as_secs_f32() * 0.5;
+        Duration::from_secs_f32(self.cfg.exit_duration.min(cap).max(0.0))
+    }
+
     // Time the current word stays up: base interval optionally jittered by
     // +/- jitter_secs so the cadence doesn't feel metronomic. Clamped to >=1s.
     fn roll_interval(&self) -> Duration {
@@ -226,6 +237,12 @@ impl eframe::App for App {
             .map(|t| t.elapsed().as_secs_f32())
             .unwrap_or(0.0);
 
+        // Seconds until the next word, and the whole-card opacity for the exit
+        // fade as the swap approaches (1.0 = fully shown, no fade by default).
+        let exit_window = self.exit_window();
+        let until_next = self.word_interval.saturating_sub(self.last_show.elapsed());
+        let exit_alpha = crate::ui::exit_alpha(until_next.as_secs_f32(), exit_window.as_secs_f32());
+
         // Read-only borrow of the deck for rendering; defer the prev_width
         // write until that borrow ends.
         let mut new_prev_width = None;
@@ -248,6 +265,7 @@ impl eframe::App for App {
                 corner: self.cfg.corner,
                 card_opacity: self.cfg.card_opacity,
                 corner_radius: self.cfg.corner_radius,
+                exit_alpha,
             };
             let widget_w = view.compute_width(ui);
             view.paint(ui, widget_w);
@@ -257,17 +275,20 @@ impl eframe::App for App {
             self.prev_width = w;
         }
 
-        // Drive repaints by state: animate at ~60 fps while the card fades in,
-        // sleep long while paused (a menu event wakes us), otherwise sleep until
-        // the next word is due. A static card costs no frames.
+        // Drive repaints by state: animate at ~60 fps while the card fades in or
+        // out, sleep long while paused (a menu event wakes us), otherwise sleep
+        // until the exit fade should begin. A static card costs no frames.
         let anim_end = self.anim_end(has_example);
         if elapsed < anim_end {
             ctx.request_repaint_after(ANIM_FRAME);
         } else if self.paused {
             ctx.request_repaint_after(Duration::from_secs(3600));
+        } else if until_next <= exit_window {
+            // Inside the exit window: animate the fade-out until the swap.
+            ctx.request_repaint_after(ANIM_FRAME);
         } else {
-            let until_next = self.word_interval.saturating_sub(self.last_show.elapsed());
-            ctx.request_repaint_after(until_next);
+            // Sleep until the exit fade should start (or the swap, if disabled).
+            ctx.request_repaint_after(until_next.saturating_sub(exit_window));
         }
     }
 }
@@ -447,5 +468,42 @@ mod tests {
         assert_eq!(app.effective_translation_delay(), 16.5);
         assert_eq!(app.example_delay(), 17.5);
         assert_eq!(app.anim_end(true), 18.5);
+    }
+
+    #[test]
+    fn exit_window_is_zero_when_disabled() {
+        let cfg = Config {
+            exit_duration: 0.0,
+            interval_secs: 30,
+            ..Config::default()
+        };
+        let app = test_app(5, cfg);
+        assert_eq!(app.exit_window(), Duration::ZERO);
+    }
+
+    #[test]
+    fn exit_window_used_as_is_when_it_fits() {
+        // 0.4s fits well within half of a 30s interval, so it's used unchanged.
+        let cfg = Config {
+            exit_duration: 0.4,
+            interval_secs: 30,
+            jitter_secs: 0,
+            ..Config::default()
+        };
+        let app = test_app(5, cfg);
+        assert_eq!(app.exit_window(), Duration::from_secs_f32(0.4));
+    }
+
+    #[test]
+    fn exit_window_capped_at_half_a_short_interval() {
+        // A 5s exit on a 4s interval would eat the whole word; cap at half = 2s.
+        let cfg = Config {
+            exit_duration: 5.0,
+            interval_secs: 4,
+            jitter_secs: 0,
+            ..Config::default()
+        };
+        let app = test_app(5, cfg);
+        assert_eq!(app.exit_window(), Duration::from_secs_f32(2.0));
     }
 }

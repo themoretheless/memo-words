@@ -45,6 +45,10 @@ pub const DEFAULT_CORNER_RADIUS: f32 = 16.0;
 /// Upper bound for the corner radius; the card is 160px tall, so anything past
 /// this stops looking like a rounded rectangle.
 const MAX_CORNER_RADIUS: f32 = 64.0;
+/// Upper bound for the exit-fade duration. It is a transition, not a dwell time;
+/// anything past a few seconds stops reading as a fade. The app also caps it at
+/// half the interval at runtime so the fade never eats the whole word.
+const MAX_EXIT_DURATION: f32 = 10.0;
 
 #[derive(Debug, Clone, Copy)]
 pub struct Config {
@@ -62,6 +66,9 @@ pub struct Config {
     /// Active-recall mode: hold the translation back until late in the word's
     /// display so there's a real window to recall the meaning first.
     pub recall_mode: bool,
+    /// Seconds the card takes to fade out before the next word. 0 = hard cut
+    /// (the original behaviour); a small value softens the swap.
+    pub exit_duration: f32,
 }
 
 impl Default for Config {
@@ -77,6 +84,7 @@ impl Default for Config {
             card_opacity: DEFAULT_CARD_OPACITY,
             corner_radius: DEFAULT_CORNER_RADIUS,
             recall_mode: false,
+            exit_duration: 0.0,
         }
     }
 }
@@ -156,6 +164,11 @@ impl Config {
                         value.to_ascii_lowercase().as_str(),
                         "true" | "1" | "yes" | "on"
                     );
+                }
+                "exit_duration" => {
+                    if let Ok(v) = value.parse::<f32>() {
+                        cfg.exit_duration = v.clamp(0.0, MAX_EXIT_DURATION);
+                    }
                 }
                 _ => {}
             }
@@ -251,6 +264,30 @@ mod tests {
         let cfg = Config::default().merge_str("card_opacity = -1\ncorner_radius = -5");
         assert_eq!(cfg.card_opacity, 0.0); // clamped to >= 0.0
         assert_eq!(cfg.corner_radius, 0.0); // clamped to >= 0.0
+    }
+
+    #[test]
+    fn merge_str_parses_and_clamps_exit_duration() {
+        assert_eq!(Config::default().exit_duration, 0.0); // off by default
+        assert_eq!(
+            Config::default()
+                .merge_str("exit_duration = 0.4")
+                .exit_duration,
+            0.4
+        );
+        // Negative clamps to 0 (off); absurdly large clamps to the cap.
+        assert_eq!(
+            Config::default()
+                .merge_str("exit_duration = -1")
+                .exit_duration,
+            0.0
+        );
+        assert_eq!(
+            Config::default()
+                .merge_str("exit_duration = 999")
+                .exit_duration,
+            10.0
+        );
     }
 
     #[test]

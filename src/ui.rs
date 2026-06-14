@@ -113,6 +113,33 @@ pub fn fade_factor(elapsed: f32, delay: f32, fade_duration: f32) -> f32 {
     smoothstep((elapsed - delay) / fade_duration)
 }
 
+/// Whole-card opacity multiplier (1..0) for the exit fade. `until_next` is the
+/// seconds left before the next word; once it drops below `exit_duration` the
+/// card eases out, reaching 0 exactly at the swap, so the word leaves softly
+/// instead of hard-cutting. With `exit_duration <= 0` the card never fades.
+pub fn exit_alpha(until_next: f32, exit_duration: f32) -> f32 {
+    if exit_duration <= 0.0 || until_next >= exit_duration {
+        return 1.0;
+    }
+    let progress = 1.0 - (until_next.max(0.0) / exit_duration);
+    1.0 - smoothstep(progress)
+}
+
+/// Scale a colour's overall opacity by `factor` (0..1). Works on any `Color32`
+/// by scaling all four premultiplied channels, so text, fill, shadow, and border
+/// all fade uniformly toward transparent. `factor == 1.0` returns the colour
+/// unchanged, so the exit fade is a no-op when the card is not leaving.
+pub fn dim(color: egui::Color32, factor: f32) -> egui::Color32 {
+    let f = factor.clamp(0.0, 1.0);
+    let scale = |c: u8| (c as f32 * f) as u8;
+    egui::Color32::from_rgba_premultiplied(
+        scale(color.r()),
+        scale(color.g()),
+        scale(color.b()),
+        scale(color.a()),
+    )
+}
+
 /// Clamp an example sentence to a single line's worth of characters, appending
 /// an ellipsis if it was cut. Counts by `char` so multibyte text never splits a
 /// codepoint, and the result never exceeds `max_chars` chars. Returns the input
@@ -189,6 +216,9 @@ pub struct CardView<'a> {
     pub corner: Corner,
     pub card_opacity: f32,
     pub corner_radius: f32,
+    /// Whole-card opacity multiplier (1.0 = fully shown). Drives the exit fade;
+    /// 1.0 leaves every colour untouched.
+    pub exit_alpha: f32,
 }
 
 impl<'a> CardView<'a> {
@@ -252,14 +282,22 @@ impl<'a> CardView<'a> {
         let widget_rect =
             egui::Rect::from_min_size(egui::pos2(x, y), egui::vec2(widget_w, WIDGET_HEIGHT));
 
+        // Whole-card opacity for the exit fade. 1.0 leaves every colour
+        // untouched, so this is a no-op outside the exit window.
+        let e = self.exit_alpha;
+        let mut shadow = SHADOW;
+        shadow.color = dim(SHADOW.color, e);
         ui.painter()
-            .add(SHADOW.as_shape(widget_rect, self.corner_radius));
-        ui.painter()
-            .rect_filled(widget_rect, self.corner_radius, card_bg(self.card_opacity));
+            .add(shadow.as_shape(widget_rect, self.corner_radius));
+        ui.painter().rect_filled(
+            widget_rect,
+            self.corner_radius,
+            dim(card_bg(self.card_opacity), e),
+        );
         ui.painter().rect_stroke(
             widget_rect,
             self.corner_radius,
-            egui::Stroke::new(1.0_f32, BORDER_COLOR),
+            egui::Stroke::new(1.0_f32, dim(BORDER_COLOR, e)),
             egui::StrokeKind::Inside,
         );
 
@@ -287,7 +325,7 @@ impl<'a> CardView<'a> {
         let mut child = ui.new_child(egui::UiBuilder::new().max_rect(inner));
         child.with_layout(egui::Layout::top_down(egui::Align::Center), |ui| {
             ui.add_space(top_pad);
-            centered_text(ui, self.word, WORD_FONT_SIZE, egui::Color32::WHITE);
+            centered_text(ui, self.word, WORD_FONT_SIZE, dim(egui::Color32::WHITE, e));
 
             if trans_ease > 0.01 {
                 ui.add_space(6.0 * trans_ease);
@@ -295,7 +333,7 @@ impl<'a> CardView<'a> {
                     ui,
                     self.transcription,
                     TRANSCRIPTION_FONT_SIZE,
-                    faded_line(TRANSCRIPTION_INTENSITY, trans_ease),
+                    dim(faded_line(TRANSCRIPTION_INTENSITY, trans_ease), e),
                 );
             }
 
@@ -305,7 +343,7 @@ impl<'a> CardView<'a> {
                     ui,
                     self.translation,
                     TRANSLATION_FONT_SIZE,
-                    faded_line(TRANSLATION_INTENSITY, transl_ease),
+                    dim(faded_line(TRANSLATION_INTENSITY, transl_ease), e),
                 );
             }
 
@@ -315,7 +353,7 @@ impl<'a> CardView<'a> {
                     ui,
                     &example,
                     EXAMPLE_FONT_SIZE,
-                    faded_line(EXAMPLE_INTENSITY, example_ease),
+                    dim(faded_line(EXAMPLE_INTENSITY, example_ease), e),
                 );
             }
         });
@@ -403,6 +441,38 @@ mod tests {
         // A brighter intensity is more opaque than a dimmer one at equal ease,
         // so perceived brightness tracks the single intensity number.
         assert!(faded_line(215, 1.0).a() > faded_line(120, 1.0).a());
+    }
+
+    #[test]
+    fn exit_alpha_off_and_before_window_is_full() {
+        // Disabled (duration 0) stays fully visible regardless of time left.
+        assert_eq!(exit_alpha(5.0, 0.0), 1.0);
+        assert_eq!(exit_alpha(0.0, 0.0), 1.0);
+        // Outside the window (more time left than the fade) is fully visible.
+        assert_eq!(exit_alpha(2.0, 0.5), 1.0);
+        assert_eq!(exit_alpha(0.5, 0.5), 1.0); // exactly at the window edge
+    }
+
+    #[test]
+    fn exit_alpha_eases_to_zero_at_the_swap() {
+        let dur = 0.5;
+        // Midpoint of the window: 1 - smoothstep(0.5) = 0.5.
+        assert!((exit_alpha(0.25, dur) - 0.5).abs() < 1e-6);
+        // At the swap the card is fully faded out.
+        assert_eq!(exit_alpha(0.0, dur), 0.0);
+        // Monotone: less time left means more faded (lower alpha).
+        assert!(exit_alpha(0.1, dur) < exit_alpha(0.4, dur));
+    }
+
+    #[test]
+    fn dim_scales_opacity_uniformly() {
+        let c = egui::Color32::from_rgba_unmultiplied(200, 100, 50, 255);
+        assert_eq!(dim(c, 1.0), c); // identity at full
+        assert_eq!(dim(c, 0.0), egui::Color32::TRANSPARENT); // gone at zero
+        // Halving scales every premultiplied channel by ~half.
+        let half = dim(c, 0.5);
+        assert_eq!(half.a(), c.a() / 2);
+        assert_eq!(half.r(), c.r() / 2);
     }
 
     #[test]
