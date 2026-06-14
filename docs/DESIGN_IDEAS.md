@@ -17,7 +17,7 @@ Ranked by value-to-effort for this product. Status is updated as items ship.
 | 5 | **Restrained entrance** — gentle scale 0.98→1.0 layered on the existing fade; presence without distraction (kept subtle for ambient) | iOS spring transitions | Med | Low | Med (motion can fight "calm") | backlog |
 | 6 | **Pace indicator** — a faint progress ring/underline counting down to the next word; turns the cadence into a glanceable signal | timer apps, Things | Med | Med | Med (added visual element) | backlog |
 | 7 | **Typographic pass** — tune sizes/weights/vertical rhythm; give the IPA a distinct, dimmer, more "phonetic" treatment | Reeder, Things 3 | Med | Low | Low | backlog |
-| 8 | **Theme & appearance config** — light/dark/auto, accent color, opacity, corner radius via the config file | Raycast themes | Med | Med | Low | backlog |
+| 8 | **Theme & appearance config** — opacity + corner radius via the config file (default-preserving; accent color and light/dark deferred) | Raycast themes | Med | Med | Low | ✅ opacity + radius |
 | 9 | **Glanceable session counter** — a faint "N words today" for quiet motivation, unobtrusive enough for ambient | Duolingo streaks | Low | Med | Med | backlog |
 | 10 | **Reveal-on-recall** — keep the translation blurred until late, nudging active recall before the answer appears | Anki / flashcards | Med | Med | Low | backlog |
 
