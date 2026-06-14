@@ -32,10 +32,47 @@ pub const MIN_WIDTH: f32 = 150.0;
 pub const MAX_WIDTH: f32 = 600.0;
 pub const WIDGET_HEIGHT: f32 = 160.0;
 pub const WORD_FONT_SIZE: f32 = 32.0;
-pub const SUB_FONT_SIZE: f32 = 15.0;
+// Type hierarchy answers a learner's question, so it ranks the lines by what
+// matters: the headword is largest, then the meaning (the payoff), then the
+// phonetic transcription (a pronunciation aid), then the example (context). The
+// translation must beat the IPA in both size and brightness; previously the IPA
+// was the brighter of the two, which let phonetics outrank the answer.
+pub const TRANSLATION_FONT_SIZE: f32 = 18.0;
+pub const TRANSCRIPTION_FONT_SIZE: f32 = 14.0;
 // The example sentence is subordinate to the translation: a touch smaller and
 // dimmer so it reads as supporting context, not the answer.
 pub const EXAMPLE_FONT_SIZE: f32 = 13.0;
+
+// Per-line greyscale level, used as BOTH the RGB value and the fully-faded alpha
+// cap, so on the dark card a single number ranks each line's perceived
+// brightness. The headword is pure white (255); among the rest the meaning wins,
+// the transcription is a dim caption, and the example is faintest. Monotone
+// 255 > translation > transcription > example keeps the hierarchy answer-first.
+const TRANSLATION_INTENSITY: u8 = 215;
+const TRANSCRIPTION_INTENSITY: u8 = 145;
+const EXAMPLE_INTENSITY: u8 = 120;
+
+// Compile-time guard that the type hierarchy stays answer-first: the payoff (the
+// translation) must outrank the phonetic aid (the transcription) in both size
+// and brightness, the headword tops everything, and the example is faintest and
+// smallest. The brightness order is the regression guard, the IPA used to render
+// brighter than the meaning. Tripping any of these fails the build, not a test.
+const _: () = {
+    assert!(WORD_FONT_SIZE > TRANSLATION_FONT_SIZE);
+    assert!(TRANSLATION_FONT_SIZE > TRANSCRIPTION_FONT_SIZE);
+    assert!(TRANSCRIPTION_FONT_SIZE >= EXAMPLE_FONT_SIZE);
+    assert!(TRANSLATION_INTENSITY < 255);
+    assert!(TRANSLATION_INTENSITY > TRANSCRIPTION_INTENSITY);
+    assert!(TRANSCRIPTION_INTENSITY > EXAMPLE_INTENSITY);
+};
+
+/// A greyscale line colour at the given fade progress. RGB is fixed at
+/// `intensity`; alpha ramps to `intensity` at full fade, so a brighter intensity
+/// is both lighter and more opaque, ranking the line in the hierarchy.
+fn faded_line(intensity: u8, ease: f32) -> egui::Color32 {
+    let a = (ease * intensity as f32) as u8;
+    egui::Color32::from_rgba_unmultiplied(intensity, intensity, intensity, a)
+}
 // Kept to a single line that fits the fixed-height card; longer examples are
 // truncated with an ellipsis rather than wrapping and overflowing.
 pub const EXAMPLE_MAX_CHARS: usize = 64;
@@ -179,8 +216,8 @@ impl<'a> CardView<'a> {
 
     pub fn compute_width(&self, ui: &egui::Ui) -> f32 {
         let word_w = measure_text_width(ui, self.word, WORD_FONT_SIZE);
-        let trans_w = measure_text_width(ui, self.transcription, SUB_FONT_SIZE);
-        let transl_w = measure_text_width(ui, self.translation, SUB_FONT_SIZE);
+        let trans_w = measure_text_width(ui, self.transcription, TRANSCRIPTION_FONT_SIZE);
+        let transl_w = measure_text_width(ui, self.translation, TRANSLATION_FONT_SIZE);
         let example = self.example_text();
         let example_w = measure_text_width(ui, &example, EXAMPLE_FONT_SIZE);
 
@@ -235,12 +272,12 @@ impl<'a> CardView<'a> {
         // not the nominal font sizes, so the block is centered accurately.
         let mut content_h = measure_text_height(ui, self.word, WORD_FONT_SIZE);
         if trans_ease > 0.01 {
-            content_h +=
-                6.0 * trans_ease + measure_text_height(ui, self.transcription, SUB_FONT_SIZE);
+            content_h += 6.0 * trans_ease
+                + measure_text_height(ui, self.transcription, TRANSCRIPTION_FONT_SIZE);
         }
         if transl_ease > 0.01 {
-            content_h +=
-                4.0 * transl_ease + measure_text_height(ui, self.translation, SUB_FONT_SIZE);
+            content_h += 4.0 * transl_ease
+                + measure_text_height(ui, self.translation, TRANSLATION_FONT_SIZE);
         }
         if show_example {
             content_h += 6.0 * example_ease + measure_text_height(ui, &example, EXAMPLE_FONT_SIZE);
@@ -254,35 +291,31 @@ impl<'a> CardView<'a> {
 
             if trans_ease > 0.01 {
                 ui.add_space(6.0 * trans_ease);
-                let a = (trans_ease * 180.0) as u8;
                 centered_text(
                     ui,
                     self.transcription,
-                    SUB_FONT_SIZE,
-                    egui::Color32::from_rgba_unmultiplied(180, 180, 180, a),
+                    TRANSCRIPTION_FONT_SIZE,
+                    faded_line(TRANSCRIPTION_INTENSITY, trans_ease),
                 );
             }
 
             if transl_ease > 0.01 {
                 ui.add_space(4.0 * transl_ease);
-                let a = (transl_ease * 140.0) as u8;
                 centered_text(
                     ui,
                     self.translation,
-                    SUB_FONT_SIZE,
-                    egui::Color32::from_rgba_unmultiplied(140, 140, 140, a),
+                    TRANSLATION_FONT_SIZE,
+                    faded_line(TRANSLATION_INTENSITY, transl_ease),
                 );
             }
 
             if show_example {
                 ui.add_space(6.0 * example_ease);
-                // Dimmer than the translation so it reads as supporting context.
-                let a = (example_ease * 110.0) as u8;
                 centered_text(
                     ui,
                     &example,
                     EXAMPLE_FONT_SIZE,
-                    egui::Color32::from_rgba_unmultiplied(150, 150, 150, a),
+                    faded_line(EXAMPLE_INTENSITY, example_ease),
                 );
             }
         });
@@ -354,6 +387,22 @@ mod tests {
         let out = truncate_example(s, 10);
         assert_eq!(out.chars().count(), 10);
         assert!(out.ends_with('…'));
+    }
+
+    #[test]
+    fn faded_line_ramps_alpha_and_fixes_rgb() {
+        // Unfaded: fully transparent, RGB still at the intensity level.
+        let c0 = faded_line(200, 0.0);
+        assert_eq!(c0.a(), 0);
+        // Fully faded: alpha reaches the intensity, RGB matches it.
+        let c1 = faded_line(200, 1.0);
+        assert_eq!(
+            c1,
+            egui::Color32::from_rgba_unmultiplied(200, 200, 200, 200)
+        );
+        // A brighter intensity is more opaque than a dimmer one at equal ease,
+        // so perceived brightness tracks the single intensity number.
+        assert!(faded_line(215, 1.0).a() > faded_line(120, 1.0).a());
     }
 
     #[test]
