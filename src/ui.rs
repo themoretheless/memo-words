@@ -6,6 +6,18 @@ const CORNER_RADIUS: f32 = 16.0;
 const SCREEN_MARGIN: f32 = 40.0;
 const INNER_MARGIN: f32 = 20.0;
 const BG_COLOR: egui::Color32 = egui::Color32::from_rgba_premultiplied(9, 9, 9, 77);
+// A soft drop shadow grounds the translucent card as a floating surface (the
+// macOS-widget / iOS-notification look) and lifts it off busy wallpapers.
+const SHADOW: egui::epaint::Shadow = egui::epaint::Shadow {
+    offset: [0, 6],
+    blur: 24,
+    spread: 0,
+    color: egui::Color32::from_black_alpha(60),
+};
+// A 1px hairline defines the card edge against light backgrounds, where the
+// dark translucent fill alone would otherwise wash out. Premultiplied white at
+// ~7% alpha (rgb == alpha == 18).
+const BORDER_COLOR: egui::Color32 = egui::Color32::from_rgba_premultiplied(18, 18, 18, 18);
 
 pub const MIN_WIDTH: f32 = 150.0;
 pub const MAX_WIDTH: f32 = 600.0;
@@ -138,7 +150,15 @@ impl<'a> CardView<'a> {
             egui::Rect::from_min_size(egui::pos2(x, y), egui::vec2(widget_w, WIDGET_HEIGHT));
 
         ui.painter()
+            .add(SHADOW.as_shape(widget_rect, CORNER_RADIUS));
+        ui.painter()
             .rect_filled(widget_rect, CORNER_RADIUS, BG_COLOR);
+        ui.painter().rect_stroke(
+            widget_rect,
+            CORNER_RADIUS,
+            egui::Stroke::new(1.0_f32, BORDER_COLOR),
+            egui::StrokeKind::Inside,
+        );
 
         let inner = widget_rect.shrink(INNER_MARGIN);
         let (trans_ease, transl_ease) = self.eases();
