@@ -37,6 +37,15 @@ impl Corner {
 /// make the jitter range `-j..=j` empty, and panic `rand`'s `random_range`.
 const MAX_SECS: u64 = 86_400;
 
+/// Default card opacity. 77/255 reproduces the original hard-coded card fill
+/// (premultiplied alpha 77) exactly, so the default look is unchanged.
+pub const DEFAULT_CARD_OPACITY: f32 = 77.0 / 255.0;
+/// Default card corner radius, matching the original hard-coded value.
+pub const DEFAULT_CORNER_RADIUS: f32 = 16.0;
+/// Upper bound for the corner radius; the card is 160px tall, so anything past
+/// this stops looking like a rounded rectangle.
+const MAX_CORNER_RADIUS: f32 = 64.0;
+
 #[derive(Debug, Clone, Copy)]
 pub struct Config {
     pub interval_secs: u64,
@@ -46,6 +55,10 @@ pub struct Config {
     pub fade_duration: f32,
     pub corner: Corner,
     pub speak: bool,
+    /// Card background opacity, 0.0 (invisible) to 1.0 (opaque).
+    pub card_opacity: f32,
+    /// Card corner radius in points.
+    pub corner_radius: f32,
 }
 
 impl Default for Config {
@@ -58,6 +71,8 @@ impl Default for Config {
             fade_duration: 1.0,
             corner: Corner::BottomRight,
             speak: false,
+            card_opacity: DEFAULT_CARD_OPACITY,
+            corner_radius: DEFAULT_CORNER_RADIUS,
         }
     }
 }
@@ -121,6 +136,16 @@ impl Config {
                         value.to_ascii_lowercase().as_str(),
                         "true" | "1" | "yes" | "on"
                     );
+                }
+                "card_opacity" => {
+                    if let Ok(v) = value.parse::<f32>() {
+                        cfg.card_opacity = v.clamp(0.0, 1.0);
+                    }
+                }
+                "corner_radius" => {
+                    if let Ok(v) = value.parse::<f32>() {
+                        cfg.corner_radius = v.clamp(0.0, MAX_CORNER_RADIUS);
+                    }
                 }
                 _ => {}
             }
@@ -199,5 +224,22 @@ mod tests {
         assert_eq!(cfg.interval_secs, def.interval_secs);
         assert_eq!(cfg.corner, def.corner);
         assert_eq!(cfg.speak, def.speak);
+    }
+
+    #[test]
+    fn merge_str_parses_appearance_keys() {
+        let cfg = Config::default().merge_str("card_opacity = 0.5\ncorner_radius = 24");
+        assert_eq!(cfg.card_opacity, 0.5);
+        assert_eq!(cfg.corner_radius, 24.0);
+    }
+
+    #[test]
+    fn merge_str_clamps_appearance_keys() {
+        let cfg = Config::default().merge_str("card_opacity = 5\ncorner_radius = 999");
+        assert_eq!(cfg.card_opacity, 1.0); // clamped to <= 1.0
+        assert_eq!(cfg.corner_radius, 64.0); // clamped to <= MAX_CORNER_RADIUS
+        let cfg = Config::default().merge_str("card_opacity = -1\ncorner_radius = -5");
+        assert_eq!(cfg.card_opacity, 0.0); // clamped to >= 0.0
+        assert_eq!(cfg.corner_radius, 0.0); // clamped to >= 0.0
     }
 }

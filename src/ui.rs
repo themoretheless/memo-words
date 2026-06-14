@@ -2,10 +2,19 @@ use crate::config::Corner;
 use eframe::egui;
 use std::sync::Arc;
 
-const CORNER_RADIUS: f32 = 16.0;
 const SCREEN_MARGIN: f32 = 40.0;
 const INNER_MARGIN: f32 = 20.0;
-const BG_COLOR: egui::Color32 = egui::Color32::from_rgba_premultiplied(9, 9, 9, 77);
+// The dark glass tint of the card (unmultiplied RGB); alpha comes from the
+// configurable opacity. At the default opacity this reproduces the original
+// hard-coded fill (premultiplied 9,9,9 @ alpha 77) exactly.
+const CARD_TINT: (u8, u8, u8) = (30, 30, 30);
+
+/// Card background colour for a given opacity (0.0..=1.0).
+pub fn card_bg(opacity: f32) -> egui::Color32 {
+    let (r, g, b) = CARD_TINT;
+    let a = (opacity.clamp(0.0, 1.0) * 255.0).round() as u8;
+    egui::Color32::from_rgba_unmultiplied(r, g, b, a)
+}
 // A soft drop shadow grounds the translucent card as a floating surface (the
 // macOS-widget / iOS-notification look) and lifts it off busy wallpapers.
 const SHADOW: egui::epaint::Shadow = egui::epaint::Shadow {
@@ -141,6 +150,8 @@ pub struct CardView<'a> {
     pub example_delay: f32,
     pub fade_duration: f32,
     pub corner: Corner,
+    pub card_opacity: f32,
+    pub corner_radius: f32,
 }
 
 impl<'a> CardView<'a> {
@@ -205,12 +216,12 @@ impl<'a> CardView<'a> {
             egui::Rect::from_min_size(egui::pos2(x, y), egui::vec2(widget_w, WIDGET_HEIGHT));
 
         ui.painter()
-            .add(SHADOW.as_shape(widget_rect, CORNER_RADIUS));
+            .add(SHADOW.as_shape(widget_rect, self.corner_radius));
         ui.painter()
-            .rect_filled(widget_rect, CORNER_RADIUS, BG_COLOR);
+            .rect_filled(widget_rect, self.corner_radius, card_bg(self.card_opacity));
         ui.painter().rect_stroke(
             widget_rect,
-            CORNER_RADIUS,
+            self.corner_radius,
             egui::Stroke::new(1.0_f32, BORDER_COLOR),
             egui::StrokeKind::Inside,
         );
@@ -281,6 +292,22 @@ impl<'a> CardView<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn card_bg_default_matches_original_fill() {
+        // The default opacity must reproduce the original hard-coded card fill
+        // (premultiplied 9,9,9 @ alpha 77), so the look is unchanged by default.
+        let original = egui::Color32::from_rgba_premultiplied(9, 9, 9, 77);
+        assert_eq!(card_bg(crate::config::DEFAULT_CARD_OPACITY), original);
+    }
+
+    #[test]
+    fn card_bg_scales_and_clamps_alpha() {
+        assert_eq!(card_bg(0.0).a(), 0);
+        assert_eq!(card_bg(1.0).a(), 255);
+        assert_eq!(card_bg(5.0).a(), 255); // out-of-range clamps
+        assert_eq!(card_bg(-1.0).a(), 0);
+    }
 
     #[test]
     fn smoothstep_clamps_and_eases() {

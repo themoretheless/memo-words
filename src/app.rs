@@ -221,6 +221,8 @@ impl eframe::App for App {
                 example_delay,
                 fade_duration: self.cfg.fade_duration,
                 corner: self.cfg.corner,
+                card_opacity: self.cfg.card_opacity,
+                corner_radius: self.cfg.corner_radius,
             };
             let widget_w = view.compute_width(ui);
             view.paint(ui, widget_w);
