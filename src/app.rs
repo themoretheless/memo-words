@@ -17,6 +17,12 @@ const ANIM_FRAME: Duration = Duration::from_millis(16);
 // Idle window measured by the frame-counter benchmark (MEMO_BENCH=1).
 const BENCH_SECS: u64 = 10;
 
+// In recall mode the translation is held back to this fraction of the interval
+// (capped below by the configured translation_delay) so there's a real window
+// to recall the meaning before it's revealed. 0.55 lands the reveal just past
+// the midpoint, leaving roughly the same span again to absorb the answer.
+const RECALL_REVEAL_FRACTION: f32 = 0.55;
+
 #[derive(Clone)]
 pub struct MenuIds {
     pub next: muda::MenuId,
@@ -78,11 +84,26 @@ impl App {
         }
     }
 
+    // When the translation line starts fading in. Normally the configured
+    // translation_delay; in recall mode it's pushed back to RECALL_REVEAL_FRACTION
+    // of the interval so the meaning stays hidden long enough to recall it first.
+    // Capped below by translation_delay, so enabling recall mode only ever delays
+    // the reveal, never pulls it earlier than the configured value.
+    fn effective_translation_delay(&self) -> f32 {
+        if self.cfg.recall_mode {
+            let late = self.cfg.interval_secs as f32 * RECALL_REVEAL_FRACTION;
+            late.max(self.cfg.translation_delay)
+        } else {
+            self.cfg.translation_delay
+        }
+    }
+
     // When the example line starts fading in: just after the translation has
     // settled, so the lines reveal in sequence (word, transcription,
-    // translation, example).
+    // translation, example). Follows the effective translation delay, so recall
+    // mode pushes the example back in lockstep with the meaning.
     fn example_delay(&self) -> f32 {
-        self.cfg.translation_delay + self.cfg.fade_duration
+        self.effective_translation_delay() + self.cfg.fade_duration
     }
 
     // Elapsed time (seconds since the word appeared) at which the card is fully
@@ -93,7 +114,10 @@ impl App {
     // hiding it entirely. The example delay only counts when the current word
     // actually has one, so example-less words don't repaint longer for nothing.
     fn anim_end(&self, has_example: bool) -> f32 {
-        let mut last = self.cfg.transcription_delay.max(self.cfg.translation_delay);
+        let mut last = self
+            .cfg
+            .transcription_delay
+            .max(self.effective_translation_delay());
         if has_example {
             last = last.max(self.example_delay());
         }
@@ -206,6 +230,7 @@ impl eframe::App for App {
         // write until that borrow ends.
         let mut new_prev_width = None;
         let mut has_example = false;
+        let translation_delay = self.effective_translation_delay();
         let example_delay = self.example_delay();
         if let Some(w) = self.deck.current() {
             has_example = !w.example.trim().is_empty();
@@ -217,7 +242,7 @@ impl eframe::App for App {
                 elapsed,
                 prev_width: self.prev_width,
                 transcription_delay: self.cfg.transcription_delay,
-                translation_delay: self.cfg.translation_delay,
+                translation_delay,
                 example_delay,
                 fade_duration: self.cfg.fade_duration,
                 corner: self.cfg.corner,
@@ -366,5 +391,61 @@ mod tests {
         assert_eq!(app.anim_end(true), 12.0);
         // Without an example the end is unchanged.
         assert_eq!(app.anim_end(false), 11.0);
+    }
+
+    #[test]
+    fn effective_translation_delay_unchanged_without_recall() {
+        let cfg = Config {
+            translation_delay: 10.0,
+            interval_secs: 30,
+            recall_mode: false,
+            ..Config::default()
+        };
+        let app = test_app(5, cfg);
+        assert_eq!(app.effective_translation_delay(), 10.0);
+    }
+
+    #[test]
+    fn recall_mode_delays_translation_to_late_in_interval() {
+        let cfg = Config {
+            translation_delay: 10.0,
+            interval_secs: 30,
+            recall_mode: true,
+            ..Config::default()
+        };
+        let app = test_app(5, cfg);
+        // 30 * 0.55 = 16.5, later than the 10s default, so the late reveal wins.
+        assert_eq!(app.effective_translation_delay(), 16.5);
+    }
+
+    #[test]
+    fn recall_mode_never_earlier_than_configured_delay() {
+        // Short interval: 8 * 0.55 = 4.4, earlier than the 10s translation_delay.
+        // Recall mode must not pull the reveal in ahead of the configured value.
+        let cfg = Config {
+            translation_delay: 10.0,
+            interval_secs: 8,
+            recall_mode: true,
+            ..Config::default()
+        };
+        let app = test_app(5, cfg);
+        assert_eq!(app.effective_translation_delay(), 10.0);
+    }
+
+    #[test]
+    fn recall_mode_pushes_example_and_anim_end() {
+        let cfg = Config {
+            transcription_delay: 5.0,
+            translation_delay: 10.0,
+            fade_duration: 1.0,
+            interval_secs: 30,
+            recall_mode: true,
+            ..Config::default()
+        };
+        let app = test_app(5, cfg);
+        // translation at 16.5, example at 17.5, repaints end at 18.5.
+        assert_eq!(app.effective_translation_delay(), 16.5);
+        assert_eq!(app.example_delay(), 17.5);
+        assert_eq!(app.anim_end(true), 18.5);
     }
 }

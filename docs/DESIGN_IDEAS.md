@@ -19,7 +19,7 @@ Ranked by value-to-effort for this product. Status is updated as items ship.
 | 7 | **Typographic pass** — tune sizes/weights/vertical rhythm; give the IPA a distinct, dimmer, more "phonetic" treatment | Reeder, Things 3 | Med | Low | Low | backlog |
 | 8 | **Theme & appearance config** — opacity + corner radius via the config file (default-preserving; accent color and light/dark deferred) | Raycast themes | Med | Med | Low | ✅ opacity + radius |
 | 9 | **Glanceable session counter** — a faint "N words today" for quiet motivation, unobtrusive enough for ambient | Duolingo streaks | Low | Med | Med | backlog |
-| 10 | **Reveal-on-recall** — keep the translation blurred until late, nudging active recall before the answer appears | Anki / flashcards | Med | Med | Low | backlog |
+| 10 | **Reveal-on-recall** — `recall_mode` config holds the translation (and the example after it) back to ~55% of the interval, giving a real window to recall the meaning before the answer fades in. Off by default; never reveals earlier than `translation_delay` | Anki / flashcards | Med | Med | Low | ✅ shipped |
 
 ## Further backlog (beyond the current top 10)
 

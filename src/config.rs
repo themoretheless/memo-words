@@ -59,6 +59,9 @@ pub struct Config {
     pub card_opacity: f32,
     /// Card corner radius in points.
     pub corner_radius: f32,
+    /// Active-recall mode: hold the translation back until late in the word's
+    /// display so there's a real window to recall the meaning first.
+    pub recall_mode: bool,
 }
 
 impl Default for Config {
@@ -73,6 +76,7 @@ impl Default for Config {
             speak: false,
             card_opacity: DEFAULT_CARD_OPACITY,
             corner_radius: DEFAULT_CORNER_RADIUS,
+            recall_mode: false,
         }
     }
 }
@@ -146,6 +150,12 @@ impl Config {
                     if let Ok(v) = value.parse::<f32>() {
                         cfg.corner_radius = v.clamp(0.0, MAX_CORNER_RADIUS);
                     }
+                }
+                "recall_mode" => {
+                    cfg.recall_mode = matches!(
+                        value.to_ascii_lowercase().as_str(),
+                        "true" | "1" | "yes" | "on"
+                    );
                 }
                 _ => {}
             }
@@ -241,5 +251,28 @@ mod tests {
         let cfg = Config::default().merge_str("card_opacity = -1\ncorner_radius = -5");
         assert_eq!(cfg.card_opacity, 0.0); // clamped to >= 0.0
         assert_eq!(cfg.corner_radius, 0.0); // clamped to >= 0.0
+    }
+
+    #[test]
+    fn merge_str_parses_recall_mode() {
+        assert!(Config::default().merge_str("recall_mode = on").recall_mode);
+        assert!(
+            Config::default()
+                .merge_str("recall_mode = true")
+                .recall_mode
+        );
+        assert!(Config::default().merge_str("recall_mode = 1").recall_mode);
+        // Off by default and for anything that isn't a truthy token.
+        assert!(!Config::default().recall_mode);
+        assert!(
+            !Config::default()
+                .merge_str("recall_mode = false")
+                .recall_mode
+        );
+        assert!(
+            !Config::default()
+                .merge_str("recall_mode = nope")
+                .recall_mode
+        );
     }
 }
