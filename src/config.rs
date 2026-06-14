@@ -69,6 +69,9 @@ pub struct Config {
     /// Seconds the card takes to fade out before the next word. 0 = hard cut
     /// (the original behaviour); a small value softens the swap.
     pub exit_duration: f32,
+    /// Probability (0.0..=1.0) that a word swap re-shows an earlier word instead
+    /// of a fresh one, for spaced review. 0 = off (always a fresh word).
+    pub recap_chance: f32,
 }
 
 impl Default for Config {
@@ -85,6 +88,7 @@ impl Default for Config {
             corner_radius: DEFAULT_CORNER_RADIUS,
             recall_mode: false,
             exit_duration: 0.0,
+            recap_chance: 0.0,
         }
     }
 }
@@ -168,6 +172,11 @@ impl Config {
                 "exit_duration" => {
                     if let Ok(v) = value.parse::<f32>() {
                         cfg.exit_duration = v.clamp(0.0, MAX_EXIT_DURATION);
+                    }
+                }
+                "recap_chance" => {
+                    if let Ok(v) = value.parse::<f32>() {
+                        cfg.recap_chance = v.clamp(0.0, 1.0);
                     }
                 }
                 _ => {}
@@ -264,6 +273,28 @@ mod tests {
         let cfg = Config::default().merge_str("card_opacity = -1\ncorner_radius = -5");
         assert_eq!(cfg.card_opacity, 0.0); // clamped to >= 0.0
         assert_eq!(cfg.corner_radius, 0.0); // clamped to >= 0.0
+    }
+
+    #[test]
+    fn merge_str_parses_and_clamps_recap_chance() {
+        assert_eq!(Config::default().recap_chance, 0.0); // off by default
+        assert_eq!(
+            Config::default()
+                .merge_str("recap_chance = 0.2")
+                .recap_chance,
+            0.2
+        );
+        // Out-of-range clamps into 0.0..=1.0.
+        assert_eq!(
+            Config::default().merge_str("recap_chance = 2").recap_chance,
+            1.0
+        );
+        assert_eq!(
+            Config::default()
+                .merge_str("recap_chance = -1")
+                .recap_chance,
+            0.0
+        );
     }
 
     #[test]

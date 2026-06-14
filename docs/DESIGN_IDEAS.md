@@ -30,6 +30,10 @@ calm-ambient identity (heavy motion, chrome, interactivity) are downranked.
   next word instead of hard-cutting, so words leave the way they arrive. Off by
   default (hard cut), capped at half the interval, one `dim()` opacity multiplier
   threaded through every painted colour. (iOS notification dismissal, Things 3)
+- **Interleaved spaced recap** - `recap_chance` occasionally re-shows a word from
+  further back in the rotation (at least 5 cards ago) for spaced review instead of
+  a fresh pick, refreshing its recency so it isn't repeated. Off by default, pure
+  `deck.rs`, no UI or persistence. (Drops, Memrise spacing)
 
 ## Top 10 (round 2)
 
@@ -41,7 +45,7 @@ the actual source. Notes record the feasibility findings.
 |---|------|-------------|-------|--------|------|--------|
 | 1 | **Symmetric exit settle** - fade the current card out before advancing, so words leave the way they arrive instead of hard-cutting. Alpha-only via one `dim()` multiplier, off by default, capped at half the interval | iOS notification dismissal, Things 3 rows | High | Low-Med | Low | ✅ shipped |
 | 2 | **Answer-first type hierarchy** - the meaning outranks the IPA in size and brightness | Things 3, Reeder | High | Low | Low | ✅ shipped |
-| 3 | **Interleaved spaced recap** - occasionally re-show a word seen ~10-20 cards ago (pick from inside the recent ring at an older offset). Pure Rust in `deck.rs`, no UI; guard small decks and carve out the recent-window test invariant | Drops, Memrise spacing | Med | Low | Low | backlog |
+| 3 | **Interleaved spaced recap** - `recap_chance` re-shows an earlier word (>= 5 cards back) for spaced review, refreshing its recency. Off by default, pure `deck.rs`, no persistence | Drops, Memrise spacing | Med | Low | Low | ✅ shipped |
 | 4 | **Faux-vibrancy material** - painter-faked top sheen gradient + 1px inner top highlight, mimicking macOS HUD/sidebar materials. Static, default-off, deliberately subtle (a bright highlight reads glossy and overlaps the shadow+border depth already shipped) | macOS NSVisualEffectView, Dynamic Island | Med | Med | Low | backlog |
 | 5 | **Spaced-repetition selection (Leitner)** - prefer due words on an expanding schedule instead of pure frequency weighting; the highest learning lever. Blocked on two real gaps: `choose()` is `&self` (can't mutate box state) and there is no persistence layer at all, so it must add a read/write state file. Unlocks #8 too | Anki / SuperMemo, Memrise | High | High | Med | backlog (needs persistence) |
 | 6 | **Exit collapse** - the width-collapse increment on top of #1: ease width back toward `MIN_WIDTH` as the card fades out. Do #1 first; this is its superset | iOS Live Activities | Med | Med | Med | backlog (after #1) |
