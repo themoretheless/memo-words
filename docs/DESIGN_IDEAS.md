@@ -34,6 +34,10 @@ calm-ambient identity (heavy motion, chrome, interactivity) are downranked.
   further back in the rotation (at least 5 cards ago) for spaced review instead of
   a fresh pick, refreshing its recency so it isn't repeated. Off by default, pure
   `deck.rs`, no UI or persistence. (Drops, Memrise spacing)
+- **Per-line entrance settle** - `settle_px` drifts each line up a few points as
+  it fades in, so the card eases together instead of appearing flat. Off by
+  default, offsets only the drawn galley (no re-layout, no extra idle frames),
+  the entrance complement to the exit fade. (Apple Dictionary reveal, Drops)
 
 ## Top 10 (round 2)
 
@@ -52,7 +56,7 @@ the actual source. Notes record the feasibility findings.
 | 7 | **Named theme presets** - a `theme =` key (graphite, mono, midnight, paper) applying a vetted palette before per-key overrides. Needs raw color keys (`CARD_TINT`, border, per-line alphas) promoted to config first, then presets on top; the single-pass merge makes base-key order a footgun to test | Raycast, Linear, Arc | Med | Med | Low | backlog (after color keys) |
 | 8 | **Familiarity-adaptive reveal pacing** - scale per-line delays by how often a word has been seen (new words reveal sooner, known words hold on the headword as a recognition test). Cheap once stats exist, but a no-op until #5 lands persistence | Anki graduating intervals, Duolingo | Med | Med | Low | backlog (after persistence) |
 | 9 | **Static accent rule** - a thin tinted hairline under the headword, one `accent_color` (default off). Pure static color, the lightweight precursor to #7's accent key. Carries no information, so low priority, and it adds the first chroma to a monochrome design | Reeder rules, Things 3 underlines | Med | Low | Low | backlog |
-| 10 | **Per-line vertical settle** - each line drifts up a few px from a small offset as it fades in, driven by its existing ease. Offset the galley draw pos only (keeps the cache key stable); best bundled with the backlogged whole-card 0.98->1.0 scale entrance, not shipped alone | Apple Dictionary reveal, Drops stagger | Med | Low | Med | backlog |
+| 10 | **Per-line vertical settle** - `settle_px` drifts each line up a few px as it fades in, offsetting only the galley draw pos (cache-stable, no extra idle frames). Off by default | Apple Dictionary reveal, Drops stagger | Med | Low | Med | ✅ shipped |
 
 ## Further backlog (beyond the current top 10)
 
