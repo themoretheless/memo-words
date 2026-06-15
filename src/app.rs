@@ -266,6 +266,7 @@ impl eframe::App for App {
                 card_opacity: self.cfg.card_opacity,
                 corner_radius: self.cfg.corner_radius,
                 exit_alpha,
+                settle_px: self.cfg.settle_px,
             };
             let widget_w = view.compute_width(ui);
             view.paint(ui, widget_w);

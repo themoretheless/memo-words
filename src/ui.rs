@@ -125,6 +125,13 @@ pub fn exit_alpha(until_next: f32, exit_duration: f32) -> f32 {
     1.0 - smoothstep(progress)
 }
 
+/// Vertical entrance offset for a line at fade progress `ease`. The line starts
+/// `settle_px` points low and rises to rest (offset 0) as it fades in, so it
+/// drifts up into place. `settle_px == 0` is always 0, i.e. the entrance is off.
+pub fn settle_offset(settle_px: f32, ease: f32) -> f32 {
+    settle_px * (1.0 - ease.clamp(0.0, 1.0))
+}
+
 /// Scale a colour's overall opacity by `factor` (0..1). Works on any `Color32`
 /// by scaling all four premultiplied channels, so text, fill, shadow, and border
 /// all fade uniformly toward transparent. `factor == 1.0` returns the colour
@@ -181,7 +188,13 @@ pub fn measure_text_height(ui: &egui::Ui, text: &str, size: f32) -> f32 {
         .height()
 }
 
-pub fn centered_text(ui: &mut egui::Ui, text: &str, size: f32, color: egui::Color32) {
+pub fn centered_text(
+    ui: &mut egui::Ui,
+    text: &str,
+    size: f32,
+    color: egui::Color32,
+    y_offset: f32,
+) {
     // Lay out with PLACEHOLDER so the galley's cache key (which epaint hashes
     // including color) stays constant as the fade alpha changes each frame.
     // The real color is applied at draw time below, turning per-frame fade
@@ -198,8 +211,11 @@ pub fn centered_text(ui: &mut egui::Ui, text: &str, size: f32, color: egui::Colo
         egui::Sense::hover(),
     );
     let x = rect.min.x + (avail - text_w) / 2.0;
+    // `y_offset` shifts only the drawn galley, not the allocated slot, so the
+    // line drifts inside its row (the entrance settle) without re-laying-out the
+    // block or moving its neighbours.
     ui.painter()
-        .galley(egui::pos2(x, rect.min.y), galley, color);
+        .galley(egui::pos2(x, rect.min.y + y_offset), galley, color);
 }
 
 pub struct CardView<'a> {
@@ -219,6 +235,8 @@ pub struct CardView<'a> {
     /// Whole-card opacity multiplier (1.0 = fully shown). Drives the exit fade;
     /// 1.0 leaves every colour untouched.
     pub exit_alpha: f32,
+    /// Points each line drifts up from as it fades in. 0 leaves lines in place.
+    pub settle_px: f32,
 }
 
 impl<'a> CardView<'a> {
@@ -303,6 +321,9 @@ impl<'a> CardView<'a> {
 
         let inner = widget_rect.shrink(INNER_MARGIN);
         let (trans_ease, transl_ease, example_ease) = self.eases();
+        // The headword has no fade, so it settles on the same curve that grows
+        // the card width on entrance.
+        let word_ease = smoothstep(self.elapsed / WIDTH_TRANSITION);
         let example = self.example_text();
         let show_example = !example.is_empty() && example_ease > 0.01;
 
@@ -325,7 +346,13 @@ impl<'a> CardView<'a> {
         let mut child = ui.new_child(egui::UiBuilder::new().max_rect(inner));
         child.with_layout(egui::Layout::top_down(egui::Align::Center), |ui| {
             ui.add_space(top_pad);
-            centered_text(ui, self.word, WORD_FONT_SIZE, dim(egui::Color32::WHITE, e));
+            centered_text(
+                ui,
+                self.word,
+                WORD_FONT_SIZE,
+                dim(egui::Color32::WHITE, e),
+                settle_offset(self.settle_px, word_ease),
+            );
 
             if trans_ease > 0.01 {
                 ui.add_space(6.0 * trans_ease);
@@ -334,6 +361,7 @@ impl<'a> CardView<'a> {
                     self.transcription,
                     TRANSCRIPTION_FONT_SIZE,
                     dim(faded_line(TRANSCRIPTION_INTENSITY, trans_ease), e),
+                    settle_offset(self.settle_px, trans_ease),
                 );
             }
 
@@ -344,6 +372,7 @@ impl<'a> CardView<'a> {
                     self.translation,
                     TRANSLATION_FONT_SIZE,
                     dim(faded_line(TRANSLATION_INTENSITY, transl_ease), e),
+                    settle_offset(self.settle_px, transl_ease),
                 );
             }
 
@@ -354,6 +383,7 @@ impl<'a> CardView<'a> {
                     &example,
                     EXAMPLE_FONT_SIZE,
                     dim(faded_line(EXAMPLE_INTENSITY, example_ease), e),
+                    settle_offset(self.settle_px, example_ease),
                 );
             }
         });
@@ -462,6 +492,19 @@ mod tests {
         assert_eq!(exit_alpha(0.0, dur), 0.0);
         // Monotone: less time left means more faded (lower alpha).
         assert!(exit_alpha(0.1, dur) < exit_alpha(0.4, dur));
+    }
+
+    #[test]
+    fn settle_offset_drifts_from_full_to_zero() {
+        // Off: always flat regardless of progress.
+        assert_eq!(settle_offset(0.0, 0.0), 0.0);
+        assert_eq!(settle_offset(0.0, 0.5), 0.0);
+        // Enabled: starts a full settle_px low, rests at 0 once faded in.
+        assert_eq!(settle_offset(6.0, 0.0), 6.0);
+        assert_eq!(settle_offset(6.0, 1.0), 0.0);
+        assert!((settle_offset(6.0, 0.5) - 3.0).abs() < 1e-6);
+        // Monotone: more fade progress means less remaining offset.
+        assert!(settle_offset(6.0, 0.75) < settle_offset(6.0, 0.25));
     }
 
     #[test]

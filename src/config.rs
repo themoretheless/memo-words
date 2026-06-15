@@ -49,6 +49,10 @@ const MAX_CORNER_RADIUS: f32 = 64.0;
 /// anything past a few seconds stops reading as a fade. The app also caps it at
 /// half the interval at runtime so the fade never eats the whole word.
 const MAX_EXIT_DURATION: f32 = 10.0;
+/// Upper bound for the entrance settle distance. Each line drifts up by at most
+/// this many points; past a small nudge it stops reading as a settle and lines
+/// start to visibly overlap their neighbours inside the fixed-height card.
+const MAX_SETTLE_PX: f32 = 16.0;
 
 #[derive(Debug, Clone, Copy)]
 pub struct Config {
@@ -72,6 +76,9 @@ pub struct Config {
     /// Probability (0.0..=1.0) that a word swap re-shows an earlier word instead
     /// of a fresh one, for spaced review. 0 = off (always a fresh word).
     pub recap_chance: f32,
+    /// Points each line drifts up from as it fades in (a gentle entrance settle).
+    /// 0 = off (lines fade in place, the original behaviour).
+    pub settle_px: f32,
 }
 
 impl Default for Config {
@@ -89,6 +96,7 @@ impl Default for Config {
             recall_mode: false,
             exit_duration: 0.0,
             recap_chance: 0.0,
+            settle_px: 0.0,
         }
     }
 }
@@ -177,6 +185,11 @@ impl Config {
                 "recap_chance" => {
                     if let Ok(v) = value.parse::<f32>() {
                         cfg.recap_chance = v.clamp(0.0, 1.0);
+                    }
+                }
+                "settle_px" => {
+                    if let Ok(v) = value.parse::<f32>() {
+                        cfg.settle_px = v.clamp(0.0, MAX_SETTLE_PX);
                     }
                 }
                 _ => {}
@@ -273,6 +286,17 @@ mod tests {
         let cfg = Config::default().merge_str("card_opacity = -1\ncorner_radius = -5");
         assert_eq!(cfg.card_opacity, 0.0); // clamped to >= 0.0
         assert_eq!(cfg.corner_radius, 0.0); // clamped to >= 0.0
+    }
+
+    #[test]
+    fn merge_str_parses_and_clamps_settle_px() {
+        assert_eq!(Config::default().settle_px, 0.0); // off by default
+        assert_eq!(Config::default().merge_str("settle_px = 4").settle_px, 4.0);
+        assert_eq!(
+            Config::default().merge_str("settle_px = 999").settle_px,
+            16.0
+        );
+        assert_eq!(Config::default().merge_str("settle_px = -3").settle_px, 0.0);
     }
 
     #[test]
