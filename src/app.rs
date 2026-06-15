@@ -242,6 +242,10 @@ impl eframe::App for App {
         let exit_window = self.exit_window();
         let until_next = self.word_interval.saturating_sub(self.last_show.elapsed());
         let exit_alpha = crate::ui::exit_alpha(until_next.as_secs_f32(), exit_window.as_secs_f32());
+        let accent = self
+            .cfg
+            .accent_color
+            .map(|[r, g, b]| egui::Color32::from_rgb(r, g, b));
 
         // Read-only borrow of the deck for rendering; defer the prev_width
         // write until that borrow ends.
@@ -267,6 +271,7 @@ impl eframe::App for App {
                 corner_radius: self.cfg.corner_radius,
                 exit_alpha,
                 settle_px: self.cfg.settle_px,
+                accent,
             };
             let widget_w = view.compute_width(ui);
             view.paint(ui, widget_w);
