@@ -4,6 +4,29 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- Optional `pace_indicator` config draws a faint progress underline for the
+  current word interval.
+- Optional `accent_color` config sets the subtle highlight/progress accent.
+- Optional `session_counter` config draws a tiny words-shown count.
+- Tray actions for speaking/copying the current word, copying a Markdown
+  session summary, copying an Anki-ready TSV export, copying a deck health
+  report, toggling recall mode, and toggling the pace indicator during the
+  current session.
+- Checked tray menu state for paused, recall, and pace-indicator modes.
+- Soft headword emphasis inside example sentences when the visible word appears
+  as a whole word.
+- Designer-curated editor-inspired backlog in `docs/DESIGN_IDEAS.md`.
+
+### Changed
+- Long card text now scales down and, if still necessary, truncates with an
+  ellipsis so the fixed-height glass card stays tidy.
+- README/config example now document appearance, recall, and pace options.
+- Benchmark output now includes `active_repaints` to separate app-requested
+  animation/progress repaints from platform-driven frames.
+
 ## [0.2.0]
 
 ### Added

@@ -1,10 +1,12 @@
 use crate::config::Config;
+use crate::db::Word;
 use crate::deck::Deck;
 use crate::ui::{self, CardView};
 use eframe::egui;
 use muda::MenuEvent;
 use rand::RngExt;
 use rand::rng;
+use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc::{Receiver, Sender};
@@ -26,8 +28,22 @@ const RECALL_REVEAL_FRACTION: f32 = 0.55;
 #[derive(Clone)]
 pub struct MenuIds {
     pub next: muda::MenuId,
+    pub speak: muda::MenuId,
+    pub copy: muda::MenuId,
+    pub copy_summary: muda::MenuId,
+    pub copy_anki: muda::MenuId,
+    pub copy_health: muda::MenuId,
+    pub toggle_recall: muda::MenuId,
+    pub toggle_pace: muda::MenuId,
     pub pause: muda::MenuId,
     pub quit: muda::MenuId,
+}
+
+#[derive(Clone)]
+pub struct MenuChecks {
+    pub pause: muda::CheckMenuItem,
+    pub recall: muda::CheckMenuItem,
+    pub pace: muda::CheckMenuItem,
 }
 
 /// The eframe adapter (a humble object): it owns the timing, tray-menu wiring,
@@ -40,17 +56,26 @@ pub struct App {
     prev_width: f32,
     started: bool,
     menu_ids: MenuIds,
+    menu_checks: Option<MenuChecks>,
     menu_tx: Option<Sender<muda::MenuId>>,
     menu_rx: Receiver<muda::MenuId>,
     paused: bool,
     cfg: Config,
     word_interval: Duration,
+    session_started: Instant,
+    session_words: Vec<Word>,
     bench: bool,
     frames: Arc<AtomicUsize>,
+    active_repaints: Arc<AtomicUsize>,
 }
 
 impl App {
-    pub fn new(deck: Deck, menu_ids: MenuIds, cfg: Config) -> Self {
+    pub fn new(
+        deck: Deck,
+        menu_ids: MenuIds,
+        menu_checks: Option<MenuChecks>,
+        cfg: Config,
+    ) -> Self {
         let (menu_tx, menu_rx) = std::sync::mpsc::channel();
         Self {
             deck,
@@ -59,13 +84,17 @@ impl App {
             prev_width: ui::MIN_WIDTH,
             started: false,
             menu_ids,
+            menu_checks,
             menu_tx: Some(menu_tx),
             menu_rx,
             paused: false,
             cfg,
             word_interval: Duration::from_secs(cfg.interval_secs),
+            session_started: Instant::now(),
+            session_words: Vec::new(),
             bench: std::env::var("MEMO_BENCH").is_ok(),
             frames: Arc::new(AtomicUsize::new(0)),
+            active_repaints: Arc::new(AtomicUsize::new(0)),
         }
     }
 
@@ -81,6 +110,61 @@ impl App {
             && let Some(w) = self.deck.current()
         {
             speak_word(&w.word);
+        }
+
+        if let Some(w) = self.deck.current() {
+            self.session_words.push(w.clone());
+        }
+    }
+
+    fn speak_current_word(&self) {
+        if let Some(w) = self.deck.current() {
+            speak_word(&w.word);
+        }
+    }
+
+    fn copy_current_word(&self, ctx: &egui::Context) {
+        if let Some(w) = self.deck.current() {
+            ctx.copy_text(format_word_clipboard_text(w));
+        }
+    }
+
+    fn copy_session_summary(&self, ctx: &egui::Context) {
+        ctx.copy_text(format_session_summary(
+            &self.session_words,
+            self.session_started.elapsed(),
+        ));
+    }
+
+    fn copy_session_as_anki(&self, ctx: &egui::Context) {
+        ctx.copy_text(format_session_anki_tsv(&self.session_words));
+    }
+
+    fn copy_deck_health_report(&self, ctx: &egui::Context) {
+        ctx.copy_text(format_deck_health_report(self.deck.words()));
+    }
+
+    fn restart_current_word_timing(&mut self) {
+        let now = Instant::now();
+        self.shown_at = Some(now);
+        self.last_show = now;
+        self.word_interval = self.roll_interval();
+    }
+
+    fn toggle_recall_mode(&mut self) {
+        self.cfg.recall_mode = !self.cfg.recall_mode;
+        if let Some(checks) = &self.menu_checks {
+            checks.recall.set_checked(self.cfg.recall_mode);
+        }
+        // Recall changes reveal timing, so restart the current card's reveal
+        // sequence instead of making visible lines pop in/out mid-word.
+        self.restart_current_word_timing();
+    }
+
+    fn toggle_pace_indicator(&mut self) {
+        self.cfg.pace_indicator = !self.cfg.pace_indicator;
+        if let Some(checks) = &self.menu_checks {
+            checks.pace.set_checked(self.cfg.pace_indicator);
         }
     }
 
@@ -181,7 +265,9 @@ impl eframe::App for App {
         if !self.started {
             self.started = true;
             self.fill_screen(&ctx);
-            if let Some(tx) = self.menu_tx.take() {
+            if !self.bench
+                && let Some(tx) = self.menu_tx.take()
+            {
                 Self::spawn_menu_watcher(&ctx, tx);
             }
             self.advance();
@@ -192,11 +278,16 @@ impl eframe::App for App {
                 self.shown_at = Some(Instant::now() - Duration::from_secs(20));
                 self.last_show = Instant::now();
                 let frames = self.frames.clone();
+                let active_repaints = self.active_repaints.clone();
                 let ctx = ctx.clone();
                 std::thread::spawn(move || {
                     std::thread::sleep(Duration::from_secs(BENCH_SECS));
                     let n = frames.load(Ordering::Relaxed);
-                    eprintln!("BENCH frames={n} fps={}", n as u64 / BENCH_SECS);
+                    let active = active_repaints.load(Ordering::Relaxed);
+                    eprintln!(
+                        "BENCH frames={n} fps={} active_repaints={active}",
+                        n as u64 / BENCH_SECS
+                    );
                     ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                     ctx.request_repaint();
                 });
@@ -209,11 +300,28 @@ impl eframe::App for App {
                 return;
             } else if id == self.menu_ids.pause {
                 self.paused = !self.paused;
+                if let Some(checks) = &self.menu_checks {
+                    checks.pause.set_checked(self.paused);
+                }
                 // Reset the timer so resuming gives a full interval rather
                 // than instantly advancing on leftover elapsed time.
                 self.last_show = Instant::now();
             } else if id == self.menu_ids.next {
                 self.advance();
+            } else if id == self.menu_ids.speak {
+                self.speak_current_word();
+            } else if id == self.menu_ids.copy {
+                self.copy_current_word(&ctx);
+            } else if id == self.menu_ids.copy_summary {
+                self.copy_session_summary(&ctx);
+            } else if id == self.menu_ids.copy_anki {
+                self.copy_session_as_anki(&ctx);
+            } else if id == self.menu_ids.copy_health {
+                self.copy_deck_health_report(&ctx);
+            } else if id == self.menu_ids.toggle_recall {
+                self.toggle_recall_mode();
+            } else if id == self.menu_ids.toggle_pace {
+                self.toggle_pace_indicator();
             }
         }
 
@@ -232,6 +340,12 @@ impl eframe::App for App {
         let mut has_example = false;
         let translation_delay = self.effective_translation_delay();
         let example_delay = self.example_delay();
+        let interval_secs = self.word_interval.as_secs_f32();
+        let interval_progress = if interval_secs > 0.0 {
+            self.last_show.elapsed().as_secs_f32() / interval_secs
+        } else {
+            1.0
+        };
         if let Some(w) = self.deck.current() {
             has_example = !w.example.trim().is_empty();
             let view = CardView {
@@ -248,6 +362,11 @@ impl eframe::App for App {
                 corner: self.cfg.corner,
                 card_opacity: self.cfg.card_opacity,
                 corner_radius: self.cfg.corner_radius,
+                interval_progress,
+                show_pace_indicator: self.cfg.pace_indicator,
+                accent_color: self.cfg.accent_color,
+                session_count: self.session_words.len(),
+                show_session_counter: self.cfg.session_counter,
             };
             let widget_w = view.compute_width(ui);
             view.paint(ui, widget_w);
@@ -262,12 +381,22 @@ impl eframe::App for App {
         // the next word is due. A static card costs no frames.
         let anim_end = self.anim_end(has_example);
         if elapsed < anim_end {
+            if self.bench {
+                self.active_repaints.fetch_add(1, Ordering::Relaxed);
+            }
             ctx.request_repaint_after(ANIM_FRAME);
         } else if self.paused {
             ctx.request_repaint_after(Duration::from_secs(3600));
         } else {
             let until_next = self.word_interval.saturating_sub(self.last_show.elapsed());
-            ctx.request_repaint_after(until_next);
+            if self.cfg.pace_indicator && until_next > Duration::ZERO {
+                if self.bench {
+                    self.active_repaints.fetch_add(1, Ordering::Relaxed);
+                }
+                ctx.request_repaint_after(until_next.min(Duration::from_secs(1)));
+            } else {
+                ctx.request_repaint_after(until_next);
+            }
         }
     }
 }
@@ -286,6 +415,131 @@ fn speak_word(word: &str) {
 
 #[cfg(not(target_os = "macos"))]
 fn speak_word(_word: &str) {}
+
+fn format_word_clipboard_text(w: &Word) -> String {
+    let mut lines = vec![
+        w.word.clone(),
+        w.transcription.clone(),
+        w.translation.clone(),
+    ];
+    if !w.example.trim().is_empty() {
+        lines.push(w.example.trim().to_string());
+    }
+    lines.join("\n")
+}
+
+fn format_session_summary(words: &[Word], elapsed: Duration) -> String {
+    let mut out = String::from("# Memo Words session\n\n");
+    out.push_str(&format!("Duration: {}\n", format_duration(elapsed)));
+    out.push_str(&format!("Words shown: {}\n\n", words.len()));
+
+    if words.is_empty() {
+        out.push_str("_No words shown yet._\n");
+        return out;
+    }
+
+    for (i, w) in words.iter().enumerate() {
+        out.push_str(&format!(
+            "{}. **{}** - {} - {}\n",
+            i + 1,
+            w.word,
+            w.transcription,
+            w.translation
+        ));
+        if !w.example.trim().is_empty() {
+            out.push_str(&format!("   Example: {}\n", w.example.trim()));
+        }
+    }
+    out
+}
+
+fn format_session_anki_tsv(words: &[Word]) -> String {
+    let mut out = String::from("word\ttranslation\ttranscription\texample\n");
+    for w in words {
+        out.push_str(&format!(
+            "{}\t{}\t{}\t{}\n",
+            tsv_cell(&w.word),
+            tsv_cell(&w.translation),
+            tsv_cell(&w.transcription),
+            tsv_cell(w.example.trim())
+        ));
+    }
+    out
+}
+
+fn tsv_cell(value: &str) -> String {
+    value
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .replace('\t', " ")
+}
+
+fn format_deck_health_report(words: &[Word]) -> String {
+    let mut missing_transcription = 0;
+    let mut missing_translation = 0;
+    let mut missing_example = 0;
+    let mut invalid_frequency = 0;
+    let mut counts = BTreeMap::<String, usize>::new();
+
+    for w in words {
+        if w.transcription.trim().is_empty() {
+            missing_transcription += 1;
+        }
+        if w.translation.trim().is_empty() {
+            missing_translation += 1;
+        }
+        if w.example.trim().is_empty() {
+            missing_example += 1;
+        }
+        if w.frequency <= 0 {
+            invalid_frequency += 1;
+        }
+
+        let key = w.word.trim().to_ascii_lowercase();
+        if !key.is_empty() {
+            *counts.entry(key).or_default() += 1;
+        }
+    }
+
+    let duplicates: Vec<_> = counts
+        .iter()
+        .filter(|(_, count)| **count > 1)
+        .map(|(word, count)| (word.as_str(), *count))
+        .collect();
+
+    let mut out = String::from("# Memo Words deck health\n\n");
+    out.push_str(&format!("Words: {}\n", words.len()));
+    out.push_str(&format!("Missing transcription: {missing_transcription}\n"));
+    out.push_str(&format!("Missing translation: {missing_translation}\n"));
+    out.push_str(&format!("Missing example: {missing_example}\n"));
+    out.push_str(&format!("Invalid frequency: {invalid_frequency}\n"));
+    out.push_str(&format!("Duplicate words: {}\n", duplicates.len()));
+
+    if !duplicates.is_empty() {
+        out.push_str("\nDuplicates:\n");
+        for (word, count) in duplicates {
+            out.push_str(&format!("- {word} x{count}\n"));
+        }
+    }
+
+    out
+}
+
+fn format_duration(duration: Duration) -> String {
+    let secs = duration.as_secs();
+    let hours = secs / 3600;
+    let minutes = (secs % 3600) / 60;
+    let seconds = secs % 60;
+
+    if hours > 0 {
+        format!("{hours}h {minutes}m {seconds}s")
+    } else if minutes > 0 {
+        format!("{minutes}m {seconds}s")
+    } else {
+        format!("{seconds}s")
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -306,10 +560,153 @@ mod tests {
         let deck = Deck::new(words, Box::new(FrequencyWeighted));
         let ids = MenuIds {
             next: muda::MenuId::from("next"),
+            speak: muda::MenuId::from("speak"),
+            copy: muda::MenuId::from("copy"),
+            copy_summary: muda::MenuId::from("copy_summary"),
+            copy_anki: muda::MenuId::from("copy_anki"),
+            copy_health: muda::MenuId::from("copy_health"),
+            toggle_recall: muda::MenuId::from("toggle_recall"),
+            toggle_pace: muda::MenuId::from("toggle_pace"),
             pause: muda::MenuId::from("pause"),
             quit: muda::MenuId::from("quit"),
         };
-        App::new(deck, ids, cfg)
+        let checks = MenuChecks {
+            pause: muda::CheckMenuItem::with_id("pause", "Paused", true, false, None),
+            recall: muda::CheckMenuItem::with_id(
+                "toggle_recall",
+                "Recall mode",
+                true,
+                cfg.recall_mode,
+                None,
+            ),
+            pace: muda::CheckMenuItem::with_id(
+                "toggle_pace",
+                "Pace indicator",
+                true,
+                cfg.pace_indicator,
+                None,
+            ),
+        };
+        App::new(deck, ids, Some(checks), cfg)
+    }
+
+    #[test]
+    fn toggle_recall_mode_flips_config_and_restarts_timing() {
+        let mut app = test_app(5, Config::default());
+        app.advance();
+        app.shown_at = Some(Instant::now() - Duration::from_secs(20));
+        app.last_show = Instant::now() - Duration::from_secs(20);
+
+        app.toggle_recall_mode();
+
+        assert!(app.cfg.recall_mode);
+        assert!(app.menu_checks.as_ref().unwrap().recall.is_checked());
+        assert!(app.shown_at.unwrap().elapsed() < Duration::from_secs(1));
+        assert!(app.last_show.elapsed() < Duration::from_secs(1));
+    }
+
+    #[test]
+    fn toggle_pace_indicator_flips_config() {
+        let mut app = test_app(5, Config::default());
+        assert!(!app.cfg.pace_indicator);
+        app.toggle_pace_indicator();
+        assert!(app.cfg.pace_indicator);
+        assert!(app.menu_checks.as_ref().unwrap().pace.is_checked());
+        app.toggle_pace_indicator();
+        assert!(!app.cfg.pace_indicator);
+        assert!(!app.menu_checks.as_ref().unwrap().pace.is_checked());
+    }
+
+    #[test]
+    fn advance_records_words_in_session_history() {
+        let mut app = test_app(5, Config::default());
+        assert!(app.session_words.is_empty());
+        app.advance();
+        assert_eq!(app.session_words.len(), 1);
+        assert_eq!(app.session_words[0].word, app.deck.current().unwrap().word);
+    }
+
+    #[test]
+    fn format_word_clipboard_text_includes_example_when_present() {
+        let word = Word {
+            word: "time".into(),
+            transcription: "/taɪm/".into(),
+            translation: "time".into(),
+            frequency: 70,
+            example: "What time is it?".into(),
+        };
+
+        assert_eq!(
+            format_word_clipboard_text(&word),
+            "time\n/taɪm/\ntime\nWhat time is it?"
+        );
+    }
+
+    #[test]
+    fn format_session_summary_lists_words_as_markdown() {
+        let words = vec![Word {
+            word: "time".into(),
+            transcription: "/taɪm/".into(),
+            translation: "time".into(),
+            frequency: 70,
+            example: "What time is it?".into(),
+        }];
+
+        let summary = format_session_summary(&words, Duration::from_secs(65));
+
+        assert!(summary.contains("# Memo Words session"));
+        assert!(summary.contains("Duration: 1m 5s"));
+        assert!(summary.contains("Words shown: 1"));
+        assert!(summary.contains("1. **time** - /taɪm/ - time"));
+        assert!(summary.contains("Example: What time is it?"));
+    }
+
+    #[test]
+    fn format_session_anki_tsv_uses_flat_tab_separated_rows() {
+        let words = vec![Word {
+            word: "look up".into(),
+            transcription: "/lʊk ʌp/".into(),
+            translation: "search".into(),
+            frequency: 100,
+            example: "Look up the word.\nThen write it down.".into(),
+        }];
+
+        let tsv = format_session_anki_tsv(&words);
+
+        assert_eq!(
+            tsv,
+            "word\ttranslation\ttranscription\texample\nlook up\tsearch\t/lʊk ʌp/\tLook up the word. Then write it down.\n"
+        );
+    }
+
+    #[test]
+    fn format_deck_health_report_counts_missing_fields_and_duplicates() {
+        let words = vec![
+            Word {
+                word: "Time".into(),
+                transcription: "/taɪm/".into(),
+                translation: "time".into(),
+                frequency: 70,
+                example: "What time is it?".into(),
+            },
+            Word {
+                word: "time".into(),
+                transcription: String::new(),
+                translation: String::new(),
+                frequency: 0,
+                example: String::new(),
+            },
+        ];
+
+        let report = format_deck_health_report(&words);
+
+        assert!(report.contains("Words: 2"));
+        assert!(report.contains("Missing transcription: 1"));
+        assert!(report.contains("Missing translation: 1"));
+        assert!(report.contains("Missing example: 1"));
+        assert!(report.contains("Invalid frequency: 1"));
+        assert!(report.contains("Duplicate words: 1"));
+        assert!(report.contains("- time x2"));
     }
 
     #[test]

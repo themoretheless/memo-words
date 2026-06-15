@@ -1,4 +1,4 @@
-use crate::config::Corner;
+use crate::config::{Corner, Rgb};
 use eframe::egui;
 use std::sync::Arc;
 
@@ -14,6 +14,10 @@ pub fn card_bg(opacity: f32) -> egui::Color32 {
     let (r, g, b) = CARD_TINT;
     let a = (opacity.clamp(0.0, 1.0) * 255.0).round() as u8;
     egui::Color32::from_rgba_unmultiplied(r, g, b, a)
+}
+
+pub fn accent_rgba(rgb: Rgb, alpha: u8) -> egui::Color32 {
+    egui::Color32::from_rgba_unmultiplied(rgb.r, rgb.g, rgb.b, alpha)
 }
 // A soft drop shadow grounds the translucent card as a floating surface (the
 // macOS-widget / iOS-notification look) and lifts it off busy wallpapers.
@@ -32,10 +36,14 @@ pub const MIN_WIDTH: f32 = 150.0;
 pub const MAX_WIDTH: f32 = 600.0;
 pub const WIDGET_HEIGHT: f32 = 160.0;
 pub const WORD_FONT_SIZE: f32 = 32.0;
+pub const WORD_MIN_FONT_SIZE: f32 = 22.0;
 pub const SUB_FONT_SIZE: f32 = 15.0;
+pub const SUB_MIN_FONT_SIZE: f32 = 12.0;
 // The example sentence is subordinate to the translation: a touch smaller and
 // dimmer so it reads as supporting context, not the answer.
 pub const EXAMPLE_FONT_SIZE: f32 = 13.0;
+pub const EXAMPLE_MIN_FONT_SIZE: f32 = 11.0;
+pub const COUNTER_FONT_SIZE: f32 = 11.0;
 // Kept to a single line that fits the fixed-height card; longer examples are
 // truncated with an ellipsis rather than wrapping and overflowing.
 pub const EXAMPLE_MAX_CHARS: usize = 64;
@@ -117,6 +125,50 @@ pub fn measure_text_height(ui: &egui::Ui, text: &str, size: f32) -> f32 {
         .height()
 }
 
+pub fn scale_font_size(measured_width: f32, base_size: f32, min_size: f32, max_width: f32) -> f32 {
+    if measured_width <= 0.0 || max_width <= 0.0 || measured_width <= max_width {
+        return base_size;
+    }
+
+    (base_size * max_width / measured_width).clamp(min_size, base_size)
+}
+
+pub fn fit_font_size(
+    ui: &egui::Ui,
+    text: &str,
+    base_size: f32,
+    min_size: f32,
+    max_width: f32,
+) -> f32 {
+    let measured = measure_text_width(ui, text, base_size);
+    scale_font_size(measured, base_size, min_size, max_width)
+}
+
+pub fn truncate_to_width(ui: &egui::Ui, text: &str, size: f32, max_width: f32) -> String {
+    if max_width <= 0.0 {
+        return String::new();
+    }
+    if measure_text_width(ui, text, size) <= max_width {
+        return text.to_string();
+    }
+
+    let ellipsis = "…";
+    if measure_text_width(ui, ellipsis, size) > max_width {
+        return String::new();
+    }
+
+    let mut out = String::new();
+    for ch in text.chars() {
+        let candidate = format!("{out}{ch}{ellipsis}");
+        if measure_text_width(ui, &candidate, size) > max_width {
+            break;
+        }
+        out.push(ch);
+    }
+
+    format!("{}{}", out.trim_end(), ellipsis)
+}
+
 pub fn centered_text(ui: &mut egui::Ui, text: &str, size: f32, color: egui::Color32) {
     // Lay out with PLACEHOLDER so the galley's cache key (which epaint hashes
     // including color) stays constant as the fade alpha changes each frame.
@@ -138,6 +190,87 @@ pub fn centered_text(ui: &mut egui::Ui, text: &str, size: f32, color: egui::Colo
         .galley(egui::pos2(x, rect.min.y), galley, color);
 }
 
+fn is_left_word_boundary(text: &str, idx: usize) -> bool {
+    if idx == 0 {
+        return true;
+    }
+
+    text[..idx]
+        .chars()
+        .next_back()
+        .map_or(true, |c| !c.is_ascii_alphanumeric())
+}
+
+fn is_right_word_boundary(text: &str, idx: usize) -> bool {
+    if idx == text.len() {
+        return true;
+    }
+
+    text[idx..]
+        .chars()
+        .next()
+        .map_or(true, |c| !c.is_ascii_alphanumeric())
+}
+
+pub fn find_word_span(text: &str, word: &str) -> Option<(usize, usize)> {
+    let needle = word.trim();
+    if needle.is_empty() {
+        return None;
+    }
+
+    let lower_text = text.to_ascii_lowercase();
+    let lower_needle = needle.to_ascii_lowercase();
+    lower_text
+        .match_indices(&lower_needle)
+        .find_map(|(start, _)| {
+            let end = start + lower_needle.len();
+            is_left_word_boundary(text, start).then_some(())?;
+            is_right_word_boundary(text, end).then_some((start, end))
+        })
+}
+
+pub fn centered_example_text(
+    ui: &mut egui::Ui,
+    text: &str,
+    word: &str,
+    size: f32,
+    color: egui::Color32,
+    highlight: egui::Color32,
+) {
+    let Some((start, end)) = find_word_span(text, word) else {
+        centered_text(ui, text, size, color);
+        return;
+    };
+
+    let segments = [
+        (&text[..start], color),
+        (&text[start..end], highlight),
+        (&text[end..], color),
+    ];
+    let galleys: Vec<_> = segments
+        .iter()
+        .map(|(segment, _)| {
+            ui.painter().layout_no_wrap(
+                (*segment).into(),
+                egui::FontId::proportional(size),
+                egui::Color32::PLACEHOLDER,
+            )
+        })
+        .collect();
+
+    let text_w: f32 = galleys.iter().map(|g| g.rect.width()).sum();
+    let text_h = galleys.iter().map(|g| g.rect.height()).fold(0.0, f32::max);
+    let avail = ui.available_width();
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(avail, text_h), egui::Sense::hover());
+    let mut x = rect.min.x + (avail - text_w) / 2.0;
+    for ((_, color), galley) in segments.iter().zip(galleys) {
+        let w = galley.rect.width();
+        let y = rect.min.y + (text_h - galley.rect.height()) / 2.0;
+        ui.painter().galley(egui::pos2(x, y), galley, *color);
+        x += w;
+    }
+}
+
 pub struct CardView<'a> {
     pub word: &'a str,
     pub transcription: &'a str,
@@ -152,6 +285,11 @@ pub struct CardView<'a> {
     pub corner: Corner,
     pub card_opacity: f32,
     pub corner_radius: f32,
+    pub interval_progress: f32,
+    pub show_pace_indicator: bool,
+    pub accent_color: Rgb,
+    pub session_count: usize,
+    pub show_session_counter: bool,
 }
 
 impl<'a> CardView<'a> {
@@ -227,38 +365,73 @@ impl<'a> CardView<'a> {
         );
 
         let inner = widget_rect.shrink(INNER_MARGIN);
+        if self.show_pace_indicator {
+            self.paint_pace_indicator(ui, widget_rect);
+        }
+        if self.show_session_counter {
+            self.paint_session_counter(ui, widget_rect);
+        }
+
         let (trans_ease, transl_ease, example_ease) = self.eases();
         let example = self.example_text();
+        let content_w = inner.width().max(1.0);
+        let word_size = fit_font_size(ui, self.word, WORD_FONT_SIZE, WORD_MIN_FONT_SIZE, content_w);
+        let word = truncate_to_width(ui, self.word, word_size, content_w);
+        let transcription_size = fit_font_size(
+            ui,
+            self.transcription,
+            SUB_FONT_SIZE,
+            SUB_MIN_FONT_SIZE,
+            content_w,
+        );
+        let transcription =
+            truncate_to_width(ui, self.transcription, transcription_size, content_w);
+        let translation_size = fit_font_size(
+            ui,
+            self.translation,
+            SUB_FONT_SIZE,
+            SUB_MIN_FONT_SIZE,
+            content_w,
+        );
+        let translation = truncate_to_width(ui, self.translation, translation_size, content_w);
+        let example_size = fit_font_size(
+            ui,
+            &example,
+            EXAMPLE_FONT_SIZE,
+            EXAMPLE_MIN_FONT_SIZE,
+            content_w,
+        );
+        let example = truncate_to_width(ui, &example, example_size, content_w);
         let show_example = !example.is_empty() && example_ease > 0.01;
 
         // Budget the REAL rendered row heights (what centered_text allocates),
         // not the nominal font sizes, so the block is centered accurately.
-        let mut content_h = measure_text_height(ui, self.word, WORD_FONT_SIZE);
+        let mut content_h = measure_text_height(ui, &word, word_size);
         if trans_ease > 0.01 {
             content_h +=
-                6.0 * trans_ease + measure_text_height(ui, self.transcription, SUB_FONT_SIZE);
+                6.0 * trans_ease + measure_text_height(ui, &transcription, transcription_size);
         }
         if transl_ease > 0.01 {
             content_h +=
-                4.0 * transl_ease + measure_text_height(ui, self.translation, SUB_FONT_SIZE);
+                4.0 * transl_ease + measure_text_height(ui, &translation, translation_size);
         }
         if show_example {
-            content_h += 6.0 * example_ease + measure_text_height(ui, &example, EXAMPLE_FONT_SIZE);
+            content_h += 6.0 * example_ease + measure_text_height(ui, &example, example_size);
         }
         let top_pad = ((inner.height() - content_h) / 2.0).max(0.0);
 
         let mut child = ui.new_child(egui::UiBuilder::new().max_rect(inner));
         child.with_layout(egui::Layout::top_down(egui::Align::Center), |ui| {
             ui.add_space(top_pad);
-            centered_text(ui, self.word, WORD_FONT_SIZE, egui::Color32::WHITE);
+            centered_text(ui, &word, word_size, egui::Color32::WHITE);
 
             if trans_ease > 0.01 {
                 ui.add_space(6.0 * trans_ease);
                 let a = (trans_ease * 180.0) as u8;
                 centered_text(
                     ui,
-                    self.transcription,
-                    SUB_FONT_SIZE,
+                    &transcription,
+                    transcription_size,
                     egui::Color32::from_rgba_unmultiplied(180, 180, 180, a),
                 );
             }
@@ -268,8 +441,8 @@ impl<'a> CardView<'a> {
                 let a = (transl_ease * 140.0) as u8;
                 centered_text(
                     ui,
-                    self.translation,
-                    SUB_FONT_SIZE,
+                    &translation,
+                    translation_size,
                     egui::Color32::from_rgba_unmultiplied(140, 140, 140, a),
                 );
             }
@@ -278,14 +451,53 @@ impl<'a> CardView<'a> {
                 ui.add_space(6.0 * example_ease);
                 // Dimmer than the translation so it reads as supporting context.
                 let a = (example_ease * 110.0) as u8;
-                centered_text(
+                centered_example_text(
                     ui,
                     &example,
-                    EXAMPLE_FONT_SIZE,
+                    self.word,
+                    example_size,
                     egui::Color32::from_rgba_unmultiplied(150, 150, 150, a),
+                    accent_rgba(self.accent_color, a),
                 );
             }
         });
+    }
+
+    fn paint_pace_indicator(&self, ui: &mut egui::Ui, widget_rect: egui::Rect) {
+        let progress = self.interval_progress.clamp(0.0, 1.0);
+        let inset = 18.0_f32.min(widget_rect.width() / 4.0);
+        let track = egui::Rect::from_min_max(
+            egui::pos2(widget_rect.min.x + inset, widget_rect.max.y - 10.0),
+            egui::pos2(widget_rect.max.x - inset, widget_rect.max.y - 8.0),
+        );
+        ui.painter().rect_filled(
+            track,
+            1.0,
+            egui::Color32::from_rgba_unmultiplied(255, 255, 255, 16),
+        );
+        if progress > 0.0 {
+            let fill = egui::Rect::from_min_max(
+                track.min,
+                egui::pos2(track.min.x + track.width() * progress, track.max.y),
+            );
+            ui.painter()
+                .rect_filled(fill, 1.0, accent_rgba(self.accent_color, 72));
+        }
+    }
+
+    fn paint_session_counter(&self, ui: &mut egui::Ui, widget_rect: egui::Rect) {
+        let text = self.session_count.to_string();
+        let galley = ui.painter().layout_no_wrap(
+            text.into(),
+            egui::FontId::proportional(COUNTER_FONT_SIZE),
+            egui::Color32::PLACEHOLDER,
+        );
+        let pos = egui::pos2(
+            widget_rect.max.x - 18.0 - galley.rect.width(),
+            widget_rect.max.y - 28.0,
+        );
+        ui.painter()
+            .galley(pos, galley, accent_rgba(self.accent_color, 88));
     }
 }
 
@@ -310,6 +522,15 @@ mod tests {
     }
 
     #[test]
+    fn accent_rgba_uses_configured_rgb_and_alpha() {
+        let color = accent_rgba(Rgb { r: 1, g: 2, b: 3 }, 255);
+        assert_eq!(color.r(), 1);
+        assert_eq!(color.g(), 2);
+        assert_eq!(color.b(), 3);
+        assert_eq!(color.a(), 255);
+    }
+
+    #[test]
     fn smoothstep_clamps_and_eases() {
         assert_eq!(smoothstep(-1.0), 0.0);
         assert_eq!(smoothstep(0.0), 0.0);
@@ -330,6 +551,36 @@ mod tests {
         assert_eq!(fade_factor(delay + 10.0, delay, fade), 1.0);
         // Halfway through the fade window is mid-ease.
         assert!((fade_factor(delay + 0.5 * fade, delay, fade) - 0.5).abs() < 1e-6);
+    }
+
+    #[test]
+    fn scale_font_size_keeps_fitting_text_unchanged() {
+        assert_eq!(scale_font_size(80.0, 32.0, 22.0, 100.0), 32.0);
+        assert_eq!(scale_font_size(0.0, 32.0, 22.0, 100.0), 32.0);
+    }
+
+    #[test]
+    fn scale_font_size_reduces_oversized_text() {
+        assert_eq!(scale_font_size(200.0, 32.0, 22.0, 100.0), 22.0);
+        assert_eq!(scale_font_size(150.0, 30.0, 10.0, 100.0), 20.0);
+    }
+
+    #[test]
+    fn find_word_span_matches_whole_words_case_insensitively() {
+        assert_eq!(
+            find_word_span("The keys are in my bag.", "the"),
+            Some((0, 3))
+        );
+        assert_eq!(
+            find_word_span("She wants to be a doctor.", "be"),
+            Some((13, 15))
+        );
+    }
+
+    #[test]
+    fn find_word_span_ignores_substrings_inside_words() {
+        assert_eq!(find_word_span("She speaks three languages.", "he"), None);
+        assert_eq!(find_word_span("Travel around the world.", "a"), None);
     }
 
     #[test]

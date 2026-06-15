@@ -34,6 +34,10 @@ impl Deck {
         self.current.map(|i| &self.words[i])
     }
 
+    pub fn words(&self) -> &[Word] {
+        &self.words
+    }
+
     /// Select a fresh word via the strategy, excluding the recent window.
     /// No-op on an empty deck.
     pub fn advance(&mut self) {

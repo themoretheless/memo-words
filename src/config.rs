@@ -30,6 +30,26 @@ impl Corner {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Rgb {
+    pub r: u8,
+    pub g: u8,
+    pub b: u8,
+}
+
+impl Rgb {
+    fn parse(s: &str) -> Option<Self> {
+        let hex = s.trim().strip_prefix('#').unwrap_or(s.trim());
+        if hex.len() != 6 {
+            return None;
+        }
+        let r = u8::from_str_radix(&hex[0..2], 16).ok()?;
+        let g = u8::from_str_radix(&hex[2..4], 16).ok()?;
+        let b = u8::from_str_radix(&hex[4..6], 16).ok()?;
+        Some(Self { r, g, b })
+    }
+}
+
 /// Upper bound for second-valued knobs (`interval_secs`, `jitter_secs`).
 /// Anything past a day is meaningless for an ambient word timer, and clamping
 /// also keeps the values safely inside `i64` range: `roll_interval` casts them
@@ -42,6 +62,12 @@ const MAX_SECS: u64 = 86_400;
 pub const DEFAULT_CARD_OPACITY: f32 = 77.0 / 255.0;
 /// Default card corner radius, matching the original hard-coded value.
 pub const DEFAULT_CORNER_RADIUS: f32 = 16.0;
+/// Default accent: near-white, matching the existing subtle highlight.
+pub const DEFAULT_ACCENT_COLOR: Rgb = Rgb {
+    r: 230,
+    g: 230,
+    b: 230,
+};
 /// Upper bound for the corner radius; the card is 160px tall, so anything past
 /// this stops looking like a rounded rectangle.
 const MAX_CORNER_RADIUS: f32 = 64.0;
@@ -62,6 +88,13 @@ pub struct Config {
     /// Active-recall mode: hold the translation back until late in the word's
     /// display so there's a real window to recall the meaning first.
     pub recall_mode: bool,
+    /// Draw a faint underline showing how far through the current word's
+    /// interval we are. Off by default so the idle overlay can keep sleeping.
+    pub pace_indicator: bool,
+    /// Subtle accent used for example-word emphasis and the pace indicator.
+    pub accent_color: Rgb,
+    /// Draw a tiny count of words shown this session.
+    pub session_counter: bool,
 }
 
 impl Default for Config {
@@ -77,6 +110,9 @@ impl Default for Config {
             card_opacity: DEFAULT_CARD_OPACITY,
             corner_radius: DEFAULT_CORNER_RADIUS,
             recall_mode: false,
+            pace_indicator: false,
+            accent_color: DEFAULT_ACCENT_COLOR,
+            session_counter: false,
         }
     }
 }
@@ -96,14 +132,19 @@ impl Config {
     fn merge_str(mut self, text: &str) -> Self {
         let cfg = &mut self;
         for line in text.lines() {
-            let line = line.split('#').next().unwrap_or("").trim();
+            let line = line.trim();
             if line.is_empty() {
                 continue;
             }
             let Some((key, value)) = line.split_once('=') else {
                 continue;
             };
-            let (key, value) = (key.trim(), value.trim());
+            let key = key.trim();
+            let value = if key == "accent_color" {
+                value.split_whitespace().next().unwrap_or("").trim()
+            } else {
+                value.split('#').next().unwrap_or("").trim()
+            };
             match key {
                 "interval_secs" => {
                     if let Ok(v) = value.parse::<u64>() {
@@ -157,6 +198,23 @@ impl Config {
                         "true" | "1" | "yes" | "on"
                     );
                 }
+                "pace_indicator" => {
+                    cfg.pace_indicator = matches!(
+                        value.to_ascii_lowercase().as_str(),
+                        "true" | "1" | "yes" | "on"
+                    );
+                }
+                "accent_color" => {
+                    if let Some(rgb) = Rgb::parse(value) {
+                        cfg.accent_color = rgb;
+                    }
+                }
+                "session_counter" => {
+                    cfg.session_counter = matches!(
+                        value.to_ascii_lowercase().as_str(),
+                        "true" | "1" | "yes" | "on"
+                    );
+                }
                 _ => {}
             }
         }
@@ -183,6 +241,32 @@ mod tests {
         assert_eq!(Corner::parse("Top_Left"), Some(Corner::TopLeft));
         assert_eq!(Corner::parse("BOTTOM RIGHT"), Some(Corner::BottomRight));
         assert_eq!(Corner::parse("middle"), None);
+    }
+
+    #[test]
+    fn rgb_parse_accepts_hash_or_plain_hex() {
+        assert_eq!(
+            Rgb::parse("#7FD1AE"),
+            Some(Rgb {
+                r: 127,
+                g: 209,
+                b: 174
+            })
+        );
+        assert_eq!(
+            Rgb::parse("7fd1ae"),
+            Some(Rgb {
+                r: 127,
+                g: 209,
+                b: 174
+            })
+        );
+    }
+
+    #[test]
+    fn rgb_parse_rejects_invalid_values() {
+        assert_eq!(Rgb::parse("#123"), None);
+        assert_eq!(Rgb::parse("#zzzzzz"), None);
     }
 
     #[test]
@@ -273,6 +357,57 @@ mod tests {
             !Config::default()
                 .merge_str("recall_mode = nope")
                 .recall_mode
+        );
+    }
+
+    #[test]
+    fn merge_str_parses_pace_indicator() {
+        assert!(
+            Config::default()
+                .merge_str("pace_indicator = on")
+                .pace_indicator
+        );
+        assert!(
+            Config::default()
+                .merge_str("pace_indicator = yes")
+                .pace_indicator
+        );
+        assert!(!Config::default().pace_indicator);
+        assert!(
+            !Config::default()
+                .merge_str("pace_indicator = false")
+                .pace_indicator
+        );
+    }
+
+    #[test]
+    fn merge_str_parses_accent_color() {
+        let cfg = Config::default().merge_str("accent_color = #7FD1AE");
+        assert_eq!(
+            cfg.accent_color,
+            Rgb {
+                r: 127,
+                g: 209,
+                b: 174
+            }
+        );
+
+        let cfg = Config::default().merge_str("accent_color = nope");
+        assert_eq!(cfg.accent_color, DEFAULT_ACCENT_COLOR);
+    }
+
+    #[test]
+    fn merge_str_parses_session_counter() {
+        assert!(
+            Config::default()
+                .merge_str("session_counter = on")
+                .session_counter
+        );
+        assert!(!Config::default().session_counter);
+        assert!(
+            !Config::default()
+                .merge_str("session_counter = off")
+                .session_counter
         );
     }
 }

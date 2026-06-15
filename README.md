@@ -72,6 +72,12 @@ no change.
 | `fade_duration`       | `1.0`          | Fade-in duration in seconds (min 0.01).                        |
 | `corner`              | `bottom-right` | Card position: `top-left`, `top-right`, `bottom-left`, `bottom-right`. |
 | `speak`               | `false`        | Speak each word aloud (macOS `say`). `true`/`1`/`yes`/`on` enable it. |
+| `card_opacity`        | `0.3`          | Card background opacity, from `0.0` (invisible) to `1.0` (opaque). |
+| `corner_radius`       | `16`           | Card corner radius in points (max 64).                         |
+| `recall_mode`         | `false`        | Hold the translation back until late in the interval for active recall. |
+| `pace_indicator`      | `false`        | Draw a faint progress underline for the current word interval. |
+| `accent_color`        | `#E6E6E6`      | Subtle RGB hex accent for example emphasis and the pace indicator. |
+| `session_counter`     | `false`        | Draw a tiny count of words shown in the current session. |
 
 Example `config.conf`:
 
@@ -80,20 +86,35 @@ interval_secs = 20
 jitter_secs = 5
 corner = top-right
 speak = true
+pace_indicator = true
+accent_color = #7FD1AE
+session_counter = true
 ```
 
 ## Tray menu
 
 - **Next word** - skip to a new word immediately.
-- **Pause / Resume** - stop/restart advancing to new words.
+- **Speak current word** - pronounce the visible word once.
+- **Copy current word** - copy the visible word, IPA, translation, and example.
+- **Copy session summary** - copy a Markdown recap of words shown this session.
+- **Copy session as Anki TSV** - copy tab-separated `word`, `translation`,
+  `transcription`, and `example` columns for flashcard import.
+- **Copy deck health report** - copy a Markdown data-quality report for missing
+  fields, invalid frequencies, and duplicate words.
+- **Recall mode** - checked when the delayed-translation reveal is enabled for
+  the current session; changing it restarts the current card's reveal.
+- **Pace indicator** - checked when the faint progress underline is visible for
+  the current session.
+- **Paused** - checked when automatic word rotation is stopped.
 - **Quit** - exit the app.
 
 ## Environment variables
 
 - `MEMO_CONFIG` - path to a config file (overrides the default location).
 - `MEMO_BENCH` - benchmark mode: shows one pinned card, counts rendered frames
-  over a fixed idle window, prints `BENCH frames=N fps=N` to stderr, and exits.
-  Used to measure idle repaint cost.
+  over a fixed idle window, prints `BENCH frames=N fps=N active_repaints=N` to
+  stderr, and exits. `active_repaints` counts app-requested animation/progress
+  repaints, separating them from platform-driven window frames.
 
 ## Platform notes
 
