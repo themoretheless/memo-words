@@ -43,6 +43,13 @@ pub const TRANSCRIPTION_FONT_SIZE: f32 = 14.0;
 // dimmer so it reads as supporting context, not the answer.
 pub const EXAMPLE_FONT_SIZE: f32 = 13.0;
 
+// The optional accent rule under the headword: a short, thin, rounded bar. Kept
+// small and tight to the word so it reads as an underline, not a divider, and
+// so it barely adds to the content height inside the fixed card.
+const ACCENT_RULE_WIDTH: f32 = 28.0;
+const ACCENT_RULE_THICKNESS: f32 = 2.0;
+const ACCENT_RULE_GAP: f32 = 4.0;
+
 // Per-line greyscale level, used as BOTH the RGB value and the fully-faded alpha
 // cap, so on the dark card a single number ranks each line's perceived
 // brightness. The headword is pure white (255); among the rest the meaning wins,
@@ -218,6 +225,25 @@ pub fn centered_text(
         .galley(egui::pos2(x, rect.min.y + y_offset), galley, color);
 }
 
+/// Draw a short, thin, rounded accent rule centred in its own row, used as a
+/// subtle underline beneath the headword. `y_offset` matches the headword's
+/// entrance settle so the rule drifts with it; the colour carries the fade and
+/// exit-alpha already applied by the caller.
+fn centered_rule(ui: &mut egui::Ui, width: f32, color: egui::Color32, y_offset: f32) {
+    let avail = ui.available_width();
+    let (rect, _) = ui.allocate_exact_size(
+        egui::vec2(avail, ACCENT_RULE_THICKNESS),
+        egui::Sense::hover(),
+    );
+    let x = rect.min.x + (avail - width) / 2.0;
+    let bar = egui::Rect::from_min_size(
+        egui::pos2(x, rect.min.y + y_offset),
+        egui::vec2(width, ACCENT_RULE_THICKNESS),
+    );
+    ui.painter()
+        .rect_filled(bar, ACCENT_RULE_THICKNESS / 2.0, color);
+}
+
 pub struct CardView<'a> {
     pub word: &'a str,
     pub transcription: &'a str,
@@ -237,6 +263,8 @@ pub struct CardView<'a> {
     pub exit_alpha: f32,
     /// Points each line drifts up from as it fades in. 0 leaves lines in place.
     pub settle_px: f32,
+    /// Optional accent colour for a thin rule under the headword. None = no rule.
+    pub accent: Option<egui::Color32>,
 }
 
 impl<'a> CardView<'a> {
@@ -330,6 +358,9 @@ impl<'a> CardView<'a> {
         // Budget the REAL rendered row heights (what centered_text allocates),
         // not the nominal font sizes, so the block is centered accurately.
         let mut content_h = measure_text_height(ui, self.word, WORD_FONT_SIZE);
+        if self.accent.is_some() {
+            content_h += ACCENT_RULE_GAP + ACCENT_RULE_THICKNESS;
+        }
         if trans_ease > 0.01 {
             content_h += 6.0 * trans_ease
                 + measure_text_height(ui, self.transcription, TRANSCRIPTION_FONT_SIZE);
@@ -353,6 +384,18 @@ impl<'a> CardView<'a> {
                 dim(egui::Color32::WHITE, e),
                 settle_offset(self.settle_px, word_ease),
             );
+
+            if let Some(accent) = self.accent {
+                ui.add_space(ACCENT_RULE_GAP);
+                // Ease the rule in with the headword's curve and carry the exit
+                // fade, so it appears and leaves with the rest of the card.
+                centered_rule(
+                    ui,
+                    ACCENT_RULE_WIDTH,
+                    dim(accent, word_ease * e),
+                    settle_offset(self.settle_px, word_ease),
+                );
+            }
 
             if trans_ease > 0.01 {
                 ui.add_space(6.0 * trans_ease);

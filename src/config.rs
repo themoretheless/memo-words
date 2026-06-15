@@ -54,6 +54,21 @@ const MAX_EXIT_DURATION: f32 = 10.0;
 /// start to visibly overlap their neighbours inside the fixed-height card.
 const MAX_SETTLE_PX: f32 = 16.0;
 
+/// Parse a `#rrggbb` or `rrggbb` hex colour into RGB bytes. Returns None for any
+/// other shape (wrong length, non-hex, shorthand), so a malformed value just
+/// leaves the accent off instead of changing it.
+fn parse_hex_color(s: &str) -> Option<[u8; 3]> {
+    let hex = s.trim();
+    let hex = hex.strip_prefix('#').unwrap_or(hex);
+    if hex.len() != 6 || !hex.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return None;
+    }
+    let r = u8::from_str_radix(&hex[0..2], 16).ok()?;
+    let g = u8::from_str_radix(&hex[2..4], 16).ok()?;
+    let b = u8::from_str_radix(&hex[4..6], 16).ok()?;
+    Some([r, g, b])
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct Config {
     pub interval_secs: u64,
@@ -79,6 +94,9 @@ pub struct Config {
     /// Points each line drifts up from as it fades in (a gentle entrance settle).
     /// 0 = off (lines fade in place, the original behaviour).
     pub settle_px: f32,
+    /// Optional accent colour (RGB) for a thin rule under the headword. None
+    /// (the default) draws no rule, keeping the card monochrome.
+    pub accent_color: Option<[u8; 3]>,
 }
 
 impl Default for Config {
@@ -97,6 +115,7 @@ impl Default for Config {
             exit_duration: 0.0,
             recap_chance: 0.0,
             settle_px: 0.0,
+            accent_color: None,
         }
     }
 }
@@ -190,6 +209,11 @@ impl Config {
                 "settle_px" => {
                     if let Ok(v) = value.parse::<f32>() {
                         cfg.settle_px = v.clamp(0.0, MAX_SETTLE_PX);
+                    }
+                }
+                "accent_color" => {
+                    if let Some(rgb) = parse_hex_color(value) {
+                        cfg.accent_color = Some(rgb);
                     }
                 }
                 _ => {}
@@ -286,6 +310,45 @@ mod tests {
         let cfg = Config::default().merge_str("card_opacity = -1\ncorner_radius = -5");
         assert_eq!(cfg.card_opacity, 0.0); // clamped to >= 0.0
         assert_eq!(cfg.corner_radius, 0.0); // clamped to >= 0.0
+    }
+
+    #[test]
+    fn merge_str_parses_accent_color() {
+        assert_eq!(Config::default().accent_color, None); // off by default
+        // Bare hex; '#' starts a comment in this format, so the hash is omitted.
+        assert_eq!(
+            Config::default()
+                .merge_str("accent_color = ff8800")
+                .accent_color,
+            Some([0xff, 0x88, 0x00])
+        );
+        assert_eq!(
+            Config::default()
+                .merge_str("accent_color = 00AAff")
+                .accent_color,
+            Some([0x00, 0xaa, 0xff])
+        );
+        // A leading '#' is stripped as a comment, leaving an empty value, so the
+        // accent stays off rather than turning on.
+        assert_eq!(
+            Config::default()
+                .merge_str("accent_color = #ff8800")
+                .accent_color,
+            None
+        );
+        // Garbage and shorthand leave it off (unchanged default).
+        assert_eq!(
+            Config::default()
+                .merge_str("accent_color = nope")
+                .accent_color,
+            None
+        );
+        assert_eq!(
+            Config::default()
+                .merge_str("accent_color = fff")
+                .accent_color,
+            None
+        );
     }
 
     #[test]

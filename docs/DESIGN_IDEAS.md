@@ -38,6 +38,10 @@ calm-ambient identity (heavy motion, chrome, interactivity) are downranked.
   it fades in, so the card eases together instead of appearing flat. Off by
   default, offsets only the drawn galley (no re-layout, no extra idle frames),
   the entrance complement to the exit fade. (Apple Dictionary reveal, Drops)
+- **Accent rule** - `accent_color` (bare rrggbb hex) draws a short thin rounded
+  bar under the headword, the first optional splash of colour in the otherwise
+  monochrome card. Off by default, eases in with the word and fades with the
+  exit. (Reeder rules, Things 3 underlines, Raycast accent)
 
 ## Top 10 (round 2)
 
@@ -55,7 +59,7 @@ the actual source. Notes record the feasibility findings.
 | 6 | **Exit collapse** - the width-collapse increment on top of #1: ease width back toward `MIN_WIDTH` as the card fades out. Do #1 first; this is its superset | iOS Live Activities | Med | Med | Med | backlog (after #1) |
 | 7 | **Named theme presets** - a `theme =` key (graphite, mono, midnight, paper) applying a vetted palette before per-key overrides. Needs raw color keys (`CARD_TINT`, border, per-line alphas) promoted to config first, then presets on top; the single-pass merge makes base-key order a footgun to test | Raycast, Linear, Arc | Med | Med | Low | backlog (after color keys) |
 | 8 | **Familiarity-adaptive reveal pacing** - scale per-line delays by how often a word has been seen (new words reveal sooner, known words hold on the headword as a recognition test). Cheap once stats exist, but a no-op until #5 lands persistence | Anki graduating intervals, Duolingo | Med | Med | Low | backlog (after persistence) |
-| 9 | **Static accent rule** - a thin tinted hairline under the headword, one `accent_color` (default off). Pure static color, the lightweight precursor to #7's accent key. Carries no information, so low priority, and it adds the first chroma to a monochrome design | Reeder rules, Things 3 underlines | Med | Low | Low | backlog |
+| 9 | **Static accent rule** - `accent_color` draws a short thin rounded bar under the headword (default off). The lightweight precursor to #7's accent key. Carries no information and adds the first chroma to a monochrome design, so opt-in | Reeder rules, Things 3 underlines | Med | Low | Low | ✅ shipped |
 | 10 | **Per-line vertical settle** - `settle_px` drifts each line up a few px as it fades in, offsetting only the galley draw pos (cache-stable, no extra idle frames). Off by default | Apple Dictionary reveal, Drops stagger | Med | Low | Med | ✅ shipped |
 
 ## Further backlog (beyond the current top 10)
