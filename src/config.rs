@@ -97,6 +97,9 @@ pub struct Config {
     /// Optional accent colour (RGB) for a thin rule under the headword. None
     /// (the default) draws no rule, keeping the card monochrome.
     pub accent_color: Option<[u8; 3]>,
+    /// Strength (0.0..=1.0) of a faint top sheen, a faux-vibrancy highlight that
+    /// makes the card read like a lit material. 0 = off (flat fill).
+    pub sheen: f32,
 }
 
 impl Default for Config {
@@ -116,6 +119,7 @@ impl Default for Config {
             recap_chance: 0.0,
             settle_px: 0.0,
             accent_color: None,
+            sheen: 0.0,
         }
     }
 }
@@ -216,6 +220,11 @@ impl Config {
                         cfg.accent_color = Some(rgb);
                     }
                 }
+                "sheen" => {
+                    if let Ok(v) = value.parse::<f32>() {
+                        cfg.sheen = v.clamp(0.0, 1.0);
+                    }
+                }
                 _ => {}
             }
         }
@@ -310,6 +319,14 @@ mod tests {
         let cfg = Config::default().merge_str("card_opacity = -1\ncorner_radius = -5");
         assert_eq!(cfg.card_opacity, 0.0); // clamped to >= 0.0
         assert_eq!(cfg.corner_radius, 0.0); // clamped to >= 0.0
+    }
+
+    #[test]
+    fn merge_str_parses_and_clamps_sheen() {
+        assert_eq!(Config::default().sheen, 0.0); // off by default
+        assert_eq!(Config::default().merge_str("sheen = 0.5").sheen, 0.5);
+        assert_eq!(Config::default().merge_str("sheen = 9").sheen, 1.0);
+        assert_eq!(Config::default().merge_str("sheen = -2").sheen, 0.0);
     }
 
     #[test]

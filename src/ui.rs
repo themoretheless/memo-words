@@ -28,6 +28,13 @@ const SHADOW: egui::epaint::Shadow = egui::epaint::Shadow {
 // ~7% alpha (rgb == alpha == 18).
 const BORDER_COLOR: egui::Color32 = egui::Color32::from_rgba_premultiplied(18, 18, 18, 18);
 
+// Optional faux-vibrancy sheen: a faint white-to-transparent vertical gradient
+// pooled in the top of the card, so it reads like a lit material. Kept very
+// faint at full strength (a bright highlight reads glossy), and confined to the
+// top portion so the lower lines stay on the flat fill.
+const SHEEN_MAX_ALPHA: u8 = 30;
+const SHEEN_HEIGHT_FRAC: f32 = 0.55;
+
 pub const MIN_WIDTH: f32 = 150.0;
 pub const MAX_WIDTH: f32 = 600.0;
 pub const WIDGET_HEIGHT: f32 = 160.0;
@@ -154,6 +161,33 @@ pub fn dim(color: egui::Color32, factor: f32) -> egui::Color32 {
     )
 }
 
+/// Paint a faint top-to-transparent vertical sheen inside the card, a faux
+/// material highlight. `strength` (0..1) scales the highlight alpha, `fade` is
+/// the exit-fade multiplier. The gradient is inset horizontally by the corner
+/// radius and confined to the top, so it never spills past the rounded corners
+/// and fades out before the lower lines. A `strength` of 0 draws nothing.
+fn paint_sheen(ui: &egui::Ui, rect: egui::Rect, corner_radius: f32, strength: f32, fade: f32) {
+    if strength <= 0.0 {
+        return;
+    }
+    let top_alpha = (SHEEN_MAX_ALPHA as f32 * strength.clamp(0.0, 1.0)) as u8;
+    let top = dim(egui::Color32::from_white_alpha(top_alpha), fade);
+    let bottom = egui::Color32::TRANSPARENT;
+    let inset = corner_radius.min(rect.width() / 2.0);
+    let left = rect.min.x + inset;
+    let right = rect.max.x - inset;
+    let y_top = rect.min.y + 1.0;
+    let y_bot = rect.min.y + rect.height() * SHEEN_HEIGHT_FRAC;
+    let mut mesh = egui::epaint::Mesh::default();
+    mesh.colored_vertex(egui::pos2(left, y_top), top);
+    mesh.colored_vertex(egui::pos2(right, y_top), top);
+    mesh.colored_vertex(egui::pos2(right, y_bot), bottom);
+    mesh.colored_vertex(egui::pos2(left, y_bot), bottom);
+    mesh.add_triangle(0, 1, 2);
+    mesh.add_triangle(0, 2, 3);
+    ui.painter().add(egui::Shape::mesh(mesh));
+}
+
 /// Clamp an example sentence to a single line's worth of characters, appending
 /// an ellipsis if it was cut. Counts by `char` so multibyte text never splits a
 /// codepoint, and the result never exceeds `max_chars` chars. Returns the input
@@ -265,6 +299,8 @@ pub struct CardView<'a> {
     pub settle_px: f32,
     /// Optional accent colour for a thin rule under the headword. None = no rule.
     pub accent: Option<egui::Color32>,
+    /// Strength (0..1) of the top sheen highlight. 0 leaves the fill flat.
+    pub sheen: f32,
 }
 
 impl<'a> CardView<'a> {
@@ -340,6 +376,8 @@ impl<'a> CardView<'a> {
             self.corner_radius,
             dim(card_bg(self.card_opacity), e),
         );
+        // Sheen sits over the fill but under the border and text.
+        paint_sheen(ui, widget_rect, self.corner_radius, self.sheen, e);
         ui.painter().rect_stroke(
             widget_rect,
             self.corner_radius,

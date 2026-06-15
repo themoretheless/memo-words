@@ -42,6 +42,10 @@ calm-ambient identity (heavy motion, chrome, interactivity) are downranked.
   bar under the headword, the first optional splash of colour in the otherwise
   monochrome card. Off by default, eases in with the word and fades with the
   exit. (Reeder rules, Things 3 underlines, Raycast accent)
+- **Faux-vibrancy sheen** - `sheen` (0..1) paints a faint white-to-transparent
+  gradient pooled at the top of the card so it reads like a lit material. Off by
+  default, inset within the rounded corners and confined to the top, drawn as a
+  4-vertex mesh over the fill, dimmed by the exit fade. (macOS NSVisualEffectView)
 
 ## Top 10 (round 2)
 
@@ -54,7 +58,7 @@ the actual source. Notes record the feasibility findings.
 | 1 | **Symmetric exit settle** - fade the current card out before advancing, so words leave the way they arrive instead of hard-cutting. Alpha-only via one `dim()` multiplier, off by default, capped at half the interval | iOS notification dismissal, Things 3 rows | High | Low-Med | Low | ✅ shipped |
 | 2 | **Answer-first type hierarchy** - the meaning outranks the IPA in size and brightness | Things 3, Reeder | High | Low | Low | ✅ shipped |
 | 3 | **Interleaved spaced recap** - `recap_chance` re-shows an earlier word (>= 5 cards back) for spaced review, refreshing its recency. Off by default, pure `deck.rs`, no persistence | Drops, Memrise spacing | Med | Low | Low | ✅ shipped |
-| 4 | **Faux-vibrancy material** - painter-faked top sheen gradient + 1px inner top highlight, mimicking macOS HUD/sidebar materials. Static, default-off, deliberately subtle (a bright highlight reads glossy and overlaps the shadow+border depth already shipped) | macOS NSVisualEffectView, Dynamic Island | Med | Med | Low | backlog |
+| 4 | **Faux-vibrancy material** - `sheen` (0..1) paints a faint top gradient as a 4-vertex mesh, inset within the rounded corners and confined to the top. Default-off, kept subtle. Top inner-highlight stroke deferred (the gradient alone carries the cue) | macOS NSVisualEffectView, Dynamic Island | Med | Med | Low | ✅ shipped |
 | 5 | **Spaced-repetition selection (Leitner)** - prefer due words on an expanding schedule instead of pure frequency weighting; the highest learning lever. Blocked on two real gaps: `choose()` is `&self` (can't mutate box state) and there is no persistence layer at all, so it must add a read/write state file. Unlocks #8 too | Anki / SuperMemo, Memrise | High | High | Med | backlog (needs persistence) |
 | 6 | **Exit collapse** - the width-collapse increment on top of #1: ease width back toward `MIN_WIDTH` as the card fades out. Do #1 first; this is its superset | iOS Live Activities | Med | Med | Med | backlog (after #1) |
 | 7 | **Named theme presets** - a `theme =` key (graphite, mono, midnight, paper) applying a vetted palette before per-key overrides. Needs raw color keys (`CARD_TINT`, border, per-line alphas) promoted to config first, then presets on top; the single-pass merge makes base-key order a footgun to test | Raycast, Linear, Arc | Med | Med | Low | backlog (after color keys) |
@@ -63,6 +67,12 @@ the actual source. Notes record the feasibility findings.
 | 10 | **Per-line vertical settle** - `settle_px` drifts each line up a few px as it fades in, offsetting only the galley draw pos (cache-stable, no extra idle frames). Off by default | Apple Dictionary reveal, Drops stagger | Med | Low | Med | ✅ shipped |
 
 ## Further backlog (beyond the current top 10)
+
+Round 2 is fully resolved: ranks 1-4, 9, 10 shipped; ranks 5-8 are deliberately
+parked because they need infrastructure that doesn't exist yet (a persistence
+layer for #5/#8) or a prerequisite refactor (#6 builds on the exit fade, #7 needs
+the card colours promoted to config keys first). The next high-leverage move is
+the persistence primitive, which unlocks the two highest learning-value ideas.
 
 - Persistence layer (read/write state file) - the shared prerequisite for #5 and
   #8 and for any cross-session stat; worth building as its own primitive.
