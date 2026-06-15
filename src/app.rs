@@ -272,6 +272,7 @@ impl eframe::App for App {
                 exit_alpha,
                 settle_px: self.cfg.settle_px,
                 accent,
+                sheen: self.cfg.sheen,
             };
             let widget_w = view.compute_width(ui);
             view.paint(ui, widget_w);
