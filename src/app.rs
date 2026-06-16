@@ -36,6 +36,7 @@ pub struct MenuIds {
     pub copy_summary: muda::MenuId,
     pub copy_anki: muda::MenuId,
     pub copy_health: muda::MenuId,
+    pub reset_session: muda::MenuId,
     pub toggle_recall: muda::MenuId,
     pub toggle_pace: muda::MenuId,
     pub pause: muda::MenuId,
@@ -155,6 +156,12 @@ impl App {
 
     fn copy_deck_health_report(&self, ctx: &egui::Context) {
         ctx.copy_text(format_deck_health_report(self.deck.words()));
+    }
+
+    fn reset_session(&mut self) {
+        self.session_started = Instant::now();
+        self.session_words.clear();
+        self.session_counts.clear();
     }
 
     fn restart_current_word_timing(&mut self) {
@@ -348,6 +355,8 @@ impl eframe::App for App {
                 self.copy_session_as_anki(&ctx);
             } else if id == self.menu_ids.copy_health {
                 self.copy_deck_health_report(&ctx);
+            } else if id == self.menu_ids.reset_session {
+                self.reset_session();
             } else if id == self.menu_ids.toggle_recall {
                 self.toggle_recall_mode();
             } else if id == self.menu_ids.toggle_pace {
@@ -625,6 +634,7 @@ mod tests {
             copy_summary: muda::MenuId::from("copy_summary"),
             copy_anki: muda::MenuId::from("copy_anki"),
             copy_health: muda::MenuId::from("copy_health"),
+            reset_session: muda::MenuId::from("reset_session"),
             toggle_recall: muda::MenuId::from("toggle_recall"),
             toggle_pace: muda::MenuId::from("toggle_pace"),
             pause: muda::MenuId::from("pause"),
@@ -715,6 +725,20 @@ mod tests {
         app.advance();
         app.advance();
         assert_eq!(app.session_word_count(" W0 "), 2);
+    }
+
+    #[test]
+    fn reset_session_clears_history_counts_and_restarts_timer() {
+        let mut app = test_app(1, Config::default());
+        app.advance();
+        app.advance();
+        app.session_started = Instant::now() - Duration::from_secs(10);
+
+        app.reset_session();
+
+        assert!(app.session_words.is_empty());
+        assert_eq!(app.session_word_count("w0"), 0);
+        assert!(app.session_started.elapsed() < Duration::from_secs(1));
     }
 
     #[test]

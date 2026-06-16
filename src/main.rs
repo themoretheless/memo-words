@@ -41,6 +41,7 @@ fn main() -> eframe::Result<()> {
                 copy_summary: MenuId::from("copy_summary"),
                 copy_anki: MenuId::from("copy_anki"),
                 copy_health: MenuId::from("copy_health"),
+                reset_session: MenuId::from("reset_session"),
                 toggle_recall: MenuId::from("toggle_recall"),
                 toggle_pace: MenuId::from("toggle_pace"),
                 pause: MenuId::from("pause"),
@@ -58,6 +59,7 @@ fn main() -> eframe::Result<()> {
         let summary_item = MenuItem::new("Copy session summary", true, None);
         let anki_item = MenuItem::new("Copy session as Anki TSV", true, None);
         let health_item = MenuItem::new("Copy deck health report", true, None);
+        let reset_item = MenuItem::new("Reset session", true, None);
         let recall_item = CheckMenuItem::new("Recall mode", true, cfg.recall_mode, None);
         let pace_item = CheckMenuItem::new("Pace indicator", true, cfg.pace_indicator, None);
         let pause_item = CheckMenuItem::new("Paused", true, false, None);
@@ -70,6 +72,7 @@ fn main() -> eframe::Result<()> {
             copy_summary: summary_item.id().clone(),
             copy_anki: anki_item.id().clone(),
             copy_health: health_item.id().clone(),
+            reset_session: reset_item.id().clone(),
             toggle_recall: recall_item.id().clone(),
             toggle_pace: pace_item.id().clone(),
             pause: pause_item.id().clone(),
@@ -87,6 +90,7 @@ fn main() -> eframe::Result<()> {
         menu.append(&summary_item).unwrap();
         menu.append(&anki_item).unwrap();
         menu.append(&health_item).unwrap();
+        menu.append(&reset_item).unwrap();
         menu.append(&recall_item).unwrap();
         menu.append(&pace_item).unwrap();
         menu.append(&pause_item).unwrap();

@@ -38,7 +38,7 @@ and glanceable.
 | # | Idea | Inspired by | Why it fits |
 |---|------|-------------|-------------|
 | 1 | **Quick preferences panel** — a tiny tray-opened settings window for interval, corner, opacity, recall, and pace indicator | Raycast, VS Code settings UI | Makes tuning visual feel immediate without editing config files |
-| 2 | **Command-style tray actions** — Next, Pause, Speak current word, Copy current word, Copy session summary, Toggle recall mode, and Toggle pace indicator are shipped | command palettes | Gives power-user control while keeping the overlay itself passive |
+| 2 | **Command-style tray actions** — Next, Pause, Speak current word, Copy current word, Copy recent words, Copy session summary, Reset session, Toggle recall mode, and Toggle pace indicator are shipped | command palettes | Gives power-user control while keeping the overlay itself passive |
 | 3 | **Deck focus presets** — Common words, verbs, business English, travel, confusing pairs | Notion database views | Lets the same surface serve different learning moments |
 | 4 | **Quiet review queue** — words missed or skipped more often get a slightly higher future weight | Anki, SuperMemo | Adds memory logic without turning the app into a quiz |
 | 5 | **Session summary export** — tray action copies the current session as Markdown; file export and daily rollups can follow | Obsidian, editors with export commands | Lets users review later in their own notes |
@@ -58,7 +58,7 @@ adding leverage.
 |---|------|-------------|-------------|
 | 1 | **Checked menu state** — Pause, Recall, and Pace are now real checked menu items | editor status menus | Users can read mode state without waiting for the next card |
 | 2 | **Copy as Anki TSV** — shipped as a tray action with word, translation, transcription, and example columns | Anki importers | Makes the ambient session actionable in study tools |
-| 3 | **Recently shown submenu** — last 5 words with copy/speak actions | editor recent files | Gives recovery when a word disappears too fast |
+| 3 | **Recently shown recovery** — shipped as Copy recent words for the last 5 shown items; a dynamic submenu can follow | editor recent files | Gives recovery when a word disappears too fast |
 | 4 | **Deck lint command** — shipped as a Markdown health report for duplicates, missing fields, and invalid frequencies | problems panel | Useful before growing the Mongo deck further |
 | 5 | **Accent color config** — shipped as `accent_color` for example emphasis and progress fill | theme settings | Adds personality without turning the card into a theme park |
 | 6 | **High-contrast preset** — shipped as `high_contrast`, strengthening fill, border, and secondary text alphas | accessibility themes | Helps on bright or busy wallpapers |
@@ -102,7 +102,26 @@ review loops, validation, and making settings less file-centric.
 | 7 | **Placement preview mode** — temporary visible safe-area guides | layout inspectors | Helps tune corner/margin without guessing from config |
 | 8 | **Accent swatches** — curated calm accent presets, still one accent at a time | theme pickers | Avoids arbitrary noisy colors while allowing personality |
 | 9 | **Deck source badge in health report** — Mongo/fallback/bench source metadata | status bars | Makes reports easier to interpret when debugging data |
-| 10 | **Session reset action** — clear counter/history without restarting the app | command palettes | Useful after changing decks or starting a new study block |
+| 10 | **Session reset action** — shipped as Reset session, clearing history/count/familiarity without restart | command palettes | Useful after changing decks or starting a new study block |
+
+## Next top 10, round 5
+
+After session reset, the strongest remaining ideas are less about adding visible
+chrome and more about making the learning loop durable, inspectable, and easy
+to tune.
+
+| # | Idea | Inspired by | Why it fits |
+|---|------|-------------|-------------|
+| 1 | **Focus-hours config** — auto-pause during configured local time windows | focus modes | Prevents the overlay from intruding during calls or deep work |
+| 2 | **Deck health severity levels** — split copied report into errors, warnings, info | problems panel | Makes cleanup priority obvious at a glance |
+| 3 | **Daily Markdown rollup** — append shown words to a dated local note | activity logs | Turns ambient exposure into reviewable notes |
+| 4 | **Import dry-run command** — validate seed/Mongo data before writes | import previews | Keeps bad rows out of the deck before they become UI issues |
+| 5 | **Quiet review weighting** — boost words copied/recently revisited | review queues | Uses user intent as a study signal without quizzes |
+| 6 | **Accent swatch names** — `accent = mint/sky/rose/plain` presets | theme palettes | Makes visual tuning friendlier than raw hex for most users |
+| 7 | **Placement preview mode** — temporary visible frame and safe-area guides | layout inspectors | Lets users tune corner/margin confidently |
+| 8 | **Deck source metadata** — include source and word count in tray/report | status bars | Makes fallback-vs-Mongo state easy to diagnose |
+| 9 | **Session freeze action** — pause rotation but keep copy/export available | editor read-only modes | Useful while manually reviewing a word |
+| 10 | **Preferences window MVP** — egui settings window for common toggles | settings UI | Removes config-file friction while preserving the passive card |
 
 > This file is the running design backlog for an iterative improvement loop:
 > each round ships the highest value-to-effort item still on-concept and proposes

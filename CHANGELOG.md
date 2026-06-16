@@ -21,6 +21,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   recent-words list, copying a Markdown session summary, copying an Anki-ready
   TSV export, copying a deck health report, toggling recall mode, and toggling
   the pace indicator during the current session.
+- Tray action to reset the current session history, counter, and familiarity
+  dimming state without restarting the app.
 - Checked tray menu state for paused, recall, and pace-indicator modes.
 - Soft headword emphasis inside example sentences when the visible word appears
   as a whole word.

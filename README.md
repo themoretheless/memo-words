@@ -108,6 +108,8 @@ familiarity_dimming = true
   `transcription`, and `example` columns for flashcard import.
 - **Copy deck health report** - copy a Markdown data-quality report for missing
   fields, invalid frequencies, and duplicate words.
+- **Reset session** - clear the current session history, count, and familiarity
+  dimming state without restarting the app.
 - **Recall mode** - checked when the delayed-translation reveal is enabled for
   the current session; changing it restarts the current card's reveal.
 - **Pace indicator** - checked when the faint progress underline is visible for
