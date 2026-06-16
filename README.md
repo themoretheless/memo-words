@@ -74,10 +74,13 @@ no change.
 | `speak`               | `false`        | Speak each word aloud (macOS `say`). `true`/`1`/`yes`/`on` enable it. |
 | `card_opacity`        | `0.3`          | Card background opacity, from `0.0` (invisible) to `1.0` (opaque). |
 | `corner_radius`       | `16`           | Card corner radius in points (max 64).                         |
+| `screen_margin`       | `40`           | Card distance from the selected screen edges, in points.        |
 | `recall_mode`         | `false`        | Hold the translation back until late in the interval for active recall. |
 | `pace_indicator`      | `false`        | Draw a faint progress underline for the current word interval. |
 | `accent_color`        | `#E6E6E6`      | Subtle RGB hex accent for example emphasis and the pace indicator. |
 | `session_counter`     | `false`        | Draw a tiny count of words shown in the current session. |
+| `high_contrast`       | `false`        | Strengthen card material, border, and secondary text alphas. |
+| `familiarity_dimming` | `false`        | Slightly dim words already seen in the current session. |
 
 Example `config.conf`:
 
@@ -85,10 +88,13 @@ Example `config.conf`:
 interval_secs = 20
 jitter_secs = 5
 corner = top-right
+screen_margin = 56
 speak = true
 pace_indicator = true
 accent_color = #7FD1AE
 session_counter = true
+high_contrast = true
+familiarity_dimming = true
 ```
 
 ## Tray menu
@@ -96,6 +102,7 @@ session_counter = true
 - **Next word** - skip to a new word immediately.
 - **Speak current word** - pronounce the visible word once.
 - **Copy current word** - copy the visible word, IPA, translation, and example.
+- **Copy recent words** - copy the five most recently shown words as Markdown.
 - **Copy session summary** - copy a Markdown recap of words shown this session.
 - **Copy session as Anki TSV** - copy tab-separated `word`, `translation`,
   `transcription`, and `example` columns for flashcard import.

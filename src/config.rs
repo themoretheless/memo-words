@@ -62,6 +62,8 @@ const MAX_SECS: u64 = 86_400;
 pub const DEFAULT_CARD_OPACITY: f32 = 77.0 / 255.0;
 /// Default card corner radius, matching the original hard-coded value.
 pub const DEFAULT_CORNER_RADIUS: f32 = 16.0;
+/// Default outer card margin from the chosen screen edges.
+pub const DEFAULT_SCREEN_MARGIN: f32 = 40.0;
 /// Default accent: near-white, matching the existing subtle highlight.
 pub const DEFAULT_ACCENT_COLOR: Rgb = Rgb {
     r: 230,
@@ -71,6 +73,8 @@ pub const DEFAULT_ACCENT_COLOR: Rgb = Rgb {
 /// Upper bound for the corner radius; the card is 160px tall, so anything past
 /// this stops looking like a rounded rectangle.
 const MAX_CORNER_RADIUS: f32 = 64.0;
+/// Max practical edge margin for an ambient corner card.
+const MAX_SCREEN_MARGIN: f32 = 240.0;
 
 #[derive(Debug, Clone, Copy)]
 pub struct Config {
@@ -85,6 +89,8 @@ pub struct Config {
     pub card_opacity: f32,
     /// Card corner radius in points.
     pub corner_radius: f32,
+    /// Outer margin from the selected screen corner.
+    pub screen_margin: f32,
     /// Active-recall mode: hold the translation back until late in the word's
     /// display so there's a real window to recall the meaning first.
     pub recall_mode: bool,
@@ -95,6 +101,10 @@ pub struct Config {
     pub accent_color: Rgb,
     /// Draw a tiny count of words shown this session.
     pub session_counter: bool,
+    /// Stronger material and text contrast for bright or busy wallpapers.
+    pub high_contrast: bool,
+    /// Slightly dim words that have already appeared in this app session.
+    pub familiarity_dimming: bool,
 }
 
 impl Default for Config {
@@ -109,10 +119,13 @@ impl Default for Config {
             speak: false,
             card_opacity: DEFAULT_CARD_OPACITY,
             corner_radius: DEFAULT_CORNER_RADIUS,
+            screen_margin: DEFAULT_SCREEN_MARGIN,
             recall_mode: false,
             pace_indicator: false,
             accent_color: DEFAULT_ACCENT_COLOR,
             session_counter: false,
+            high_contrast: false,
+            familiarity_dimming: false,
         }
     }
 }
@@ -192,6 +205,11 @@ impl Config {
                         cfg.corner_radius = v.clamp(0.0, MAX_CORNER_RADIUS);
                     }
                 }
+                "screen_margin" => {
+                    if let Ok(v) = value.parse::<f32>() {
+                        cfg.screen_margin = v.clamp(0.0, MAX_SCREEN_MARGIN);
+                    }
+                }
                 "recall_mode" => {
                     cfg.recall_mode = matches!(
                         value.to_ascii_lowercase().as_str(),
@@ -211,6 +229,18 @@ impl Config {
                 }
                 "session_counter" => {
                     cfg.session_counter = matches!(
+                        value.to_ascii_lowercase().as_str(),
+                        "true" | "1" | "yes" | "on"
+                    );
+                }
+                "high_contrast" => {
+                    cfg.high_contrast = matches!(
+                        value.to_ascii_lowercase().as_str(),
+                        "true" | "1" | "yes" | "on"
+                    );
+                }
+                "familiarity_dimming" => {
+                    cfg.familiarity_dimming = matches!(
                         value.to_ascii_lowercase().as_str(),
                         "true" | "1" | "yes" | "on"
                     );
@@ -322,19 +352,25 @@ mod tests {
 
     #[test]
     fn merge_str_parses_appearance_keys() {
-        let cfg = Config::default().merge_str("card_opacity = 0.5\ncorner_radius = 24");
+        let cfg = Config::default()
+            .merge_str("card_opacity = 0.5\ncorner_radius = 24\nscreen_margin = 64");
         assert_eq!(cfg.card_opacity, 0.5);
         assert_eq!(cfg.corner_radius, 24.0);
+        assert_eq!(cfg.screen_margin, 64.0);
     }
 
     #[test]
     fn merge_str_clamps_appearance_keys() {
-        let cfg = Config::default().merge_str("card_opacity = 5\ncorner_radius = 999");
+        let cfg = Config::default()
+            .merge_str("card_opacity = 5\ncorner_radius = 999\nscreen_margin = 999");
         assert_eq!(cfg.card_opacity, 1.0); // clamped to <= 1.0
         assert_eq!(cfg.corner_radius, 64.0); // clamped to <= MAX_CORNER_RADIUS
-        let cfg = Config::default().merge_str("card_opacity = -1\ncorner_radius = -5");
+        assert_eq!(cfg.screen_margin, 240.0); // clamped to <= MAX_SCREEN_MARGIN
+        let cfg = Config::default()
+            .merge_str("card_opacity = -1\ncorner_radius = -5\nscreen_margin = -5");
         assert_eq!(cfg.card_opacity, 0.0); // clamped to >= 0.0
         assert_eq!(cfg.corner_radius, 0.0); // clamped to >= 0.0
+        assert_eq!(cfg.screen_margin, 0.0); // clamped to >= 0.0
     }
 
     #[test]
@@ -408,6 +444,36 @@ mod tests {
             !Config::default()
                 .merge_str("session_counter = off")
                 .session_counter
+        );
+    }
+
+    #[test]
+    fn merge_str_parses_high_contrast() {
+        assert!(
+            Config::default()
+                .merge_str("high_contrast = yes")
+                .high_contrast
+        );
+        assert!(!Config::default().high_contrast);
+        assert!(
+            !Config::default()
+                .merge_str("high_contrast = false")
+                .high_contrast
+        );
+    }
+
+    #[test]
+    fn merge_str_parses_familiarity_dimming() {
+        assert!(
+            Config::default()
+                .merge_str("familiarity_dimming = true")
+                .familiarity_dimming
+        );
+        assert!(!Config::default().familiarity_dimming);
+        assert!(
+            !Config::default()
+                .merge_str("familiarity_dimming = no")
+                .familiarity_dimming
         );
     }
 }

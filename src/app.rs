@@ -24,12 +24,15 @@ const BENCH_SECS: u64 = 10;
 // to recall the meaning before it's revealed. 0.55 lands the reveal just past
 // the midpoint, leaving roughly the same span again to absorb the answer.
 const RECALL_REVEAL_FRACTION: f32 = 0.55;
+const HIGH_CONTRAST_MIN_OPACITY: f32 = 0.62;
+const RECENT_WORDS_LIMIT: usize = 5;
 
 #[derive(Clone)]
 pub struct MenuIds {
     pub next: muda::MenuId,
     pub speak: muda::MenuId,
     pub copy: muda::MenuId,
+    pub copy_recent: muda::MenuId,
     pub copy_summary: muda::MenuId,
     pub copy_anki: muda::MenuId,
     pub copy_health: muda::MenuId,
@@ -64,6 +67,7 @@ pub struct App {
     word_interval: Duration,
     session_started: Instant,
     session_words: Vec<Word>,
+    session_counts: BTreeMap<String, usize>,
     bench: bool,
     frames: Arc<AtomicUsize>,
     active_repaints: Arc<AtomicUsize>,
@@ -92,6 +96,7 @@ impl App {
             word_interval: Duration::from_secs(cfg.interval_secs),
             session_started: Instant::now(),
             session_words: Vec::new(),
+            session_counts: BTreeMap::new(),
             bench: std::env::var("MEMO_BENCH").is_ok(),
             frames: Arc::new(AtomicUsize::new(0)),
             active_repaints: Arc::new(AtomicUsize::new(0)),
@@ -113,6 +118,10 @@ impl App {
         }
 
         if let Some(w) = self.deck.current() {
+            *self
+                .session_counts
+                .entry(normalize_word_key(&w.word))
+                .or_default() += 1;
             self.session_words.push(w.clone());
         }
     }
@@ -134,6 +143,10 @@ impl App {
             &self.session_words,
             self.session_started.elapsed(),
         ));
+    }
+
+    fn copy_recent_words(&self, ctx: &egui::Context) {
+        ctx.copy_text(format_recent_words(&self.session_words, RECENT_WORDS_LIMIT));
     }
 
     fn copy_session_as_anki(&self, ctx: &egui::Context) {
@@ -166,6 +179,21 @@ impl App {
         if let Some(checks) = &self.menu_checks {
             checks.pace.set_checked(self.cfg.pace_indicator);
         }
+    }
+
+    fn effective_card_opacity(&self) -> f32 {
+        if self.cfg.high_contrast {
+            self.cfg.card_opacity.max(HIGH_CONTRAST_MIN_OPACITY)
+        } else {
+            self.cfg.card_opacity
+        }
+    }
+
+    fn session_word_count(&self, word: &str) -> usize {
+        self.session_counts
+            .get(&normalize_word_key(word))
+            .copied()
+            .unwrap_or(0)
     }
 
     // When the translation line starts fading in. Normally the configured
@@ -312,6 +340,8 @@ impl eframe::App for App {
                 self.speak_current_word();
             } else if id == self.menu_ids.copy {
                 self.copy_current_word(&ctx);
+            } else if id == self.menu_ids.copy_recent {
+                self.copy_recent_words(&ctx);
             } else if id == self.menu_ids.copy_summary {
                 self.copy_session_summary(&ctx);
             } else if id == self.menu_ids.copy_anki {
@@ -360,13 +390,19 @@ impl eframe::App for App {
                 example_delay,
                 fade_duration: self.cfg.fade_duration,
                 corner: self.cfg.corner,
-                card_opacity: self.cfg.card_opacity,
+                card_opacity: self.effective_card_opacity(),
                 corner_radius: self.cfg.corner_radius,
                 interval_progress,
                 show_pace_indicator: self.cfg.pace_indicator,
                 accent_color: self.cfg.accent_color,
                 session_count: self.session_words.len(),
                 show_session_counter: self.cfg.session_counter,
+                high_contrast: self.cfg.high_contrast,
+                screen_margin: self.cfg.screen_margin,
+                familiarity_factor: ui::familiarity_factor(
+                    self.session_word_count(&w.word),
+                    self.cfg.familiarity_dimming,
+                ),
             };
             let widget_w = view.compute_width(ui);
             view.paint(ui, widget_w);
@@ -428,6 +464,10 @@ fn format_word_clipboard_text(w: &Word) -> String {
     lines.join("\n")
 }
 
+fn normalize_word_key(word: &str) -> String {
+    word.trim().to_ascii_lowercase()
+}
+
 fn format_session_summary(words: &[Word], elapsed: Duration) -> String {
     let mut out = String::from("# Memo Words session\n\n");
     out.push_str(&format!("Duration: {}\n", format_duration(elapsed)));
@@ -449,6 +489,25 @@ fn format_session_summary(words: &[Word], elapsed: Duration) -> String {
         if !w.example.trim().is_empty() {
             out.push_str(&format!("   Example: {}\n", w.example.trim()));
         }
+    }
+    out
+}
+
+fn format_recent_words(words: &[Word], limit: usize) -> String {
+    let mut out = String::from("# Recent Memo Words\n\n");
+    if words.is_empty() || limit == 0 {
+        out.push_str("_No words shown yet._\n");
+        return out;
+    }
+
+    for (i, w) in words.iter().rev().take(limit).enumerate() {
+        out.push_str(&format!(
+            "{}. **{}** - {} - {}\n",
+            i + 1,
+            w.word,
+            w.transcription,
+            w.translation
+        ));
     }
     out
 }
@@ -562,6 +621,7 @@ mod tests {
             next: muda::MenuId::from("next"),
             speak: muda::MenuId::from("speak"),
             copy: muda::MenuId::from("copy"),
+            copy_recent: muda::MenuId::from("copy_recent"),
             copy_summary: muda::MenuId::from("copy_summary"),
             copy_anki: muda::MenuId::from("copy_anki"),
             copy_health: muda::MenuId::from("copy_health"),
@@ -618,12 +678,43 @@ mod tests {
     }
 
     #[test]
+    fn high_contrast_raises_card_opacity_floor() {
+        let cfg = Config {
+            high_contrast: true,
+            card_opacity: 0.2,
+            ..Config::default()
+        };
+        let app = test_app(5, cfg);
+        assert_eq!(app.effective_card_opacity(), HIGH_CONTRAST_MIN_OPACITY);
+    }
+
+    #[test]
+    fn normal_contrast_keeps_configured_card_opacity() {
+        let cfg = Config {
+            high_contrast: false,
+            card_opacity: 0.2,
+            ..Config::default()
+        };
+        let app = test_app(5, cfg);
+        assert_eq!(app.effective_card_opacity(), 0.2);
+    }
+
+    #[test]
     fn advance_records_words_in_session_history() {
         let mut app = test_app(5, Config::default());
         assert!(app.session_words.is_empty());
         app.advance();
         assert_eq!(app.session_words.len(), 1);
+        assert_eq!(app.session_word_count(&app.session_words[0].word), 1);
         assert_eq!(app.session_words[0].word, app.deck.current().unwrap().word);
+    }
+
+    #[test]
+    fn advance_counts_repeated_words_by_normalized_key() {
+        let mut app = test_app(1, Config::default());
+        app.advance();
+        app.advance();
+        assert_eq!(app.session_word_count(" W0 "), 2);
     }
 
     #[test]
@@ -659,6 +750,45 @@ mod tests {
         assert!(summary.contains("Words shown: 1"));
         assert!(summary.contains("1. **time** - /taɪm/ - time"));
         assert!(summary.contains("Example: What time is it?"));
+    }
+
+    #[test]
+    fn format_recent_words_lists_latest_first_and_limits_count() {
+        let words: Vec<Word> = (0..7)
+            .map(|i| Word {
+                word: format!("w{i}"),
+                transcription: format!("/w{i}/"),
+                translation: format!("word {i}"),
+                frequency: i as i32 + 1,
+                example: String::new(),
+            })
+            .collect();
+
+        let recent = format_recent_words(&words, 3);
+
+        assert!(recent.contains("# Recent Memo Words"));
+        assert!(recent.contains("1. **w6** - /w6/ - word 6"));
+        assert!(recent.contains("2. **w5** - /w5/ - word 5"));
+        assert!(recent.contains("3. **w4** - /w4/ - word 4"));
+        assert!(!recent.contains("w3"));
+    }
+
+    #[test]
+    fn format_recent_words_handles_empty_history() {
+        assert!(format_recent_words(&[], 5).contains("_No words shown yet._"));
+        assert!(
+            format_recent_words(
+                &[Word {
+                    word: "time".into(),
+                    transcription: String::new(),
+                    translation: String::new(),
+                    frequency: 1,
+                    example: String::new(),
+                }],
+                0
+            )
+            .contains("_No words shown yet._")
+        );
     }
 
     #[test]

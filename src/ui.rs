@@ -2,7 +2,6 @@ use crate::config::{Corner, Rgb};
 use eframe::egui;
 use std::sync::Arc;
 
-const SCREEN_MARGIN: f32 = 40.0;
 const INNER_MARGIN: f32 = 20.0;
 // The dark glass tint of the card (unmultiplied RGB); alpha comes from the
 // configurable opacity. At the default opacity this reproduces the original
@@ -31,6 +30,8 @@ const SHADOW: egui::epaint::Shadow = egui::epaint::Shadow {
 // dark translucent fill alone would otherwise wash out. Premultiplied white at
 // ~7% alpha (rgb == alpha == 18).
 const BORDER_COLOR: egui::Color32 = egui::Color32::from_rgba_premultiplied(18, 18, 18, 18);
+const HIGH_CONTRAST_BORDER_COLOR: egui::Color32 =
+    egui::Color32::from_rgba_premultiplied(48, 48, 48, 48);
 
 pub const MIN_WIDTH: f32 = 150.0;
 pub const MAX_WIDTH: f32 = 600.0;
@@ -82,6 +83,31 @@ pub fn smoothstep(t: f32) -> f32 {
 
 pub fn fade_factor(elapsed: f32, delay: f32, fade_duration: f32) -> f32 {
     smoothstep((elapsed - delay) / fade_duration)
+}
+
+pub fn contrast_alpha(progress: f32, normal: u8, high: u8, high_contrast: bool) -> u8 {
+    let max = if high_contrast { high } else { normal };
+    (progress.clamp(0.0, 1.0) * f32::from(max)) as u8
+}
+
+pub fn familiarity_factor(seen_count: usize, enabled: bool) -> f32 {
+    if !enabled || seen_count <= 1 {
+        return 1.0;
+    }
+
+    (1.0 - 0.08 * (seen_count - 1) as f32).max(0.72)
+}
+
+pub fn apply_alpha_factor(alpha: u8, factor: f32) -> u8 {
+    (f32::from(alpha) * factor.clamp(0.0, 1.0)).round() as u8
+}
+
+pub fn contrast_border(high_contrast: bool) -> egui::Color32 {
+    if high_contrast {
+        HIGH_CONTRAST_BORDER_COLOR
+    } else {
+        BORDER_COLOR
+    }
 }
 
 /// Clamp an example sentence to a single line's worth of characters, appending
@@ -290,6 +316,9 @@ pub struct CardView<'a> {
     pub accent_color: Rgb,
     pub session_count: usize,
     pub show_session_counter: bool,
+    pub high_contrast: bool,
+    pub screen_margin: f32,
+    pub familiarity_factor: f32,
 }
 
 impl<'a> CardView<'a> {
@@ -338,16 +367,15 @@ impl<'a> CardView<'a> {
 
     pub fn paint(&self, ui: &mut egui::Ui, widget_w: f32) {
         let screen = ui.max_rect();
+        let margin = self.screen_margin.max(0.0);
 
         let x = match self.corner {
-            Corner::TopLeft | Corner::BottomLeft => screen.min.x + SCREEN_MARGIN,
-            Corner::TopRight | Corner::BottomRight => screen.max.x - widget_w - SCREEN_MARGIN,
+            Corner::TopLeft | Corner::BottomLeft => screen.min.x + margin,
+            Corner::TopRight | Corner::BottomRight => screen.max.x - widget_w - margin,
         };
         let y = match self.corner {
-            Corner::TopLeft | Corner::TopRight => screen.min.y + SCREEN_MARGIN,
-            Corner::BottomLeft | Corner::BottomRight => {
-                screen.max.y - WIDGET_HEIGHT - SCREEN_MARGIN
-            }
+            Corner::TopLeft | Corner::TopRight => screen.min.y + margin,
+            Corner::BottomLeft | Corner::BottomRight => screen.max.y - WIDGET_HEIGHT - margin,
         };
 
         let widget_rect =
@@ -360,7 +388,7 @@ impl<'a> CardView<'a> {
         ui.painter().rect_stroke(
             widget_rect,
             self.corner_radius,
-            egui::Stroke::new(1.0_f32, BORDER_COLOR),
+            egui::Stroke::new(1.0_f32, contrast_border(self.high_contrast)),
             egui::StrokeKind::Inside,
         );
 
@@ -423,11 +451,19 @@ impl<'a> CardView<'a> {
         let mut child = ui.new_child(egui::UiBuilder::new().max_rect(inner));
         child.with_layout(egui::Layout::top_down(egui::Align::Center), |ui| {
             ui.add_space(top_pad);
-            centered_text(ui, &word, word_size, egui::Color32::WHITE);
+            centered_text(
+                ui,
+                &word,
+                word_size,
+                egui::Color32::from_white_alpha(apply_alpha_factor(255, self.familiarity_factor)),
+            );
 
             if trans_ease > 0.01 {
                 ui.add_space(6.0 * trans_ease);
-                let a = (trans_ease * 180.0) as u8;
+                let a = apply_alpha_factor(
+                    contrast_alpha(trans_ease, 180, 224, self.high_contrast),
+                    self.familiarity_factor,
+                );
                 centered_text(
                     ui,
                     &transcription,
@@ -438,7 +474,10 @@ impl<'a> CardView<'a> {
 
             if transl_ease > 0.01 {
                 ui.add_space(4.0 * transl_ease);
-                let a = (transl_ease * 140.0) as u8;
+                let a = apply_alpha_factor(
+                    contrast_alpha(transl_ease, 140, 196, self.high_contrast),
+                    self.familiarity_factor,
+                );
                 centered_text(
                     ui,
                     &translation,
@@ -450,7 +489,10 @@ impl<'a> CardView<'a> {
             if show_example {
                 ui.add_space(6.0 * example_ease);
                 // Dimmer than the translation so it reads as supporting context.
-                let a = (example_ease * 110.0) as u8;
+                let a = apply_alpha_factor(
+                    contrast_alpha(example_ease, 110, 168, self.high_contrast),
+                    self.familiarity_factor,
+                );
                 centered_example_text(
                     ui,
                     &example,
@@ -473,15 +515,23 @@ impl<'a> CardView<'a> {
         ui.painter().rect_filled(
             track,
             1.0,
-            egui::Color32::from_rgba_unmultiplied(255, 255, 255, 16),
+            egui::Color32::from_rgba_unmultiplied(
+                255,
+                255,
+                255,
+                if self.high_contrast { 34 } else { 16 },
+            ),
         );
         if progress > 0.0 {
             let fill = egui::Rect::from_min_max(
                 track.min,
                 egui::pos2(track.min.x + track.width() * progress, track.max.y),
             );
-            ui.painter()
-                .rect_filled(fill, 1.0, accent_rgba(self.accent_color, 72));
+            ui.painter().rect_filled(
+                fill,
+                1.0,
+                accent_rgba(self.accent_color, if self.high_contrast { 120 } else { 72 }),
+            );
         }
     }
 
@@ -496,8 +546,11 @@ impl<'a> CardView<'a> {
             widget_rect.max.x - 18.0 - galley.rect.width(),
             widget_rect.max.y - 28.0,
         );
-        ui.painter()
-            .galley(pos, galley, accent_rgba(self.accent_color, 88));
+        ui.painter().galley(
+            pos,
+            galley,
+            accent_rgba(self.accent_color, if self.high_contrast { 136 } else { 88 }),
+        );
     }
 }
 
@@ -551,6 +604,35 @@ mod tests {
         assert_eq!(fade_factor(delay + 10.0, delay, fade), 1.0);
         // Halfway through the fade window is mid-ease.
         assert!((fade_factor(delay + 0.5 * fade, delay, fade) - 0.5).abs() < 1e-6);
+    }
+
+    #[test]
+    fn contrast_alpha_uses_high_contrast_max_when_enabled() {
+        assert_eq!(contrast_alpha(1.0, 100, 200, false), 100);
+        assert_eq!(contrast_alpha(1.0, 100, 200, true), 200);
+        assert_eq!(contrast_alpha(2.0, 100, 200, true), 200);
+    }
+
+    #[test]
+    fn familiarity_factor_only_dims_repeated_words_when_enabled() {
+        assert_eq!(familiarity_factor(1, false), 1.0);
+        assert_eq!(familiarity_factor(5, false), 1.0);
+        assert_eq!(familiarity_factor(1, true), 1.0);
+        assert!((familiarity_factor(3, true) - 0.84).abs() < 1e-6);
+        assert_eq!(familiarity_factor(99, true), 0.72);
+    }
+
+    #[test]
+    fn apply_alpha_factor_scales_and_clamps() {
+        assert_eq!(apply_alpha_factor(200, 0.5), 100);
+        assert_eq!(apply_alpha_factor(200, 2.0), 200);
+        assert_eq!(apply_alpha_factor(200, -1.0), 0);
+    }
+
+    #[test]
+    fn contrast_border_switches_color() {
+        assert_eq!(contrast_border(false), BORDER_COLOR);
+        assert_eq!(contrast_border(true), HIGH_CONTRAST_BORDER_COLOR);
     }
 
     #[test]

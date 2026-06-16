@@ -61,11 +61,11 @@ adding leverage.
 | 3 | **Recently shown submenu** — last 5 words with copy/speak actions | editor recent files | Gives recovery when a word disappears too fast |
 | 4 | **Deck lint command** — shipped as a Markdown health report for duplicates, missing fields, and invalid frequencies | problems panel | Useful before growing the Mongo deck further |
 | 5 | **Accent color config** — shipped as `accent_color` for example emphasis and progress fill | theme settings | Adds personality without turning the card into a theme park |
-| 6 | **High-contrast preset** — stronger fill, border, and text alphas | accessibility themes | Helps on bright or busy wallpapers |
+| 6 | **High-contrast preset** — shipped as `high_contrast`, strengthening fill, border, and secondary text alphas | accessibility themes | Helps on bright or busy wallpapers |
 | 7 | **Session word counter** — shipped as optional `session_counter`, a tiny status-style count on the card | editor status bar | Gives motivation with almost no extra visual weight |
 | 8 | **Focus-hours config** — pause automatically during configured time windows | focus modes | Keeps the overlay respectful during deep work or calls |
 | 9 | **Import preview command** — validate seed data before writing MongoDB | import previews | Prevents bad deck data from reaching the app |
-| 10 | **Per-corner safe margins** — tune margins per monitor/corner | editor layout settings | Makes placement feel deliberate across different desktops |
+| 10 | **Safe margins** — shipped global `screen_margin`; per-monitor/per-corner margins can follow | editor layout settings | Makes placement feel deliberate across different desktops |
 
 ## Next top 10, round 3
 
@@ -74,16 +74,35 @@ review, and respectful automation.
 
 | # | Idea | Inspired by | Why it fits |
 |---|------|-------------|-------------|
-| 1 | **Recently shown submenu** — last 5 words with speak/copy actions | recent files | Recover a missed word without adding controls to the card |
-| 2 | **Seen-frequency dimming** — familiar words become slightly quieter after repeated exposure | editor diagnostics fading | Lets novelty stand out while keeping the same rotation model |
+| 1 | **Recently shown recovery** — shipped as "Copy recent words" for the last 5 items; a dynamic submenu can follow | recent files | Recover a missed word without adding controls to the card |
+| 2 | **Seen-frequency dimming** — shipped as optional `familiarity_dimming`; repeated session words become slightly quieter | editor diagnostics fading | Lets novelty stand out while keeping the same rotation model |
 | 3 | **Smart cooldown by word** — prevent the same word from returning for a longer configurable span | debounce/cooldown controls | Improves variety beyond the current recent window |
 | 4 | **Focus-hours config** — auto-pause during configured time windows | focus modes | Respectful during meetings or deep work |
-| 5 | **High-contrast preset** — single config switch for stronger material/text/border | accessibility themes | Better legibility on bright wallpapers |
+| 5 | **High-contrast preset** — shipped as `high_contrast` for stronger material/text/border | accessibility themes | Better legibility on bright wallpapers |
 | 6 | **Deck health severity levels** — group report items as error/warning/info | problems panel | Makes the health report easier to scan |
 | 7 | **Import dry-run script** — validate `seed_words.js` shape before writing MongoDB | import preview | Prevents data cleanup from happening after the fact |
 | 8 | **Daily rollup file** — append shown words to a local Markdown log | editor activity logs | Gives passive learning a durable trail |
 | 9 | **Corner safe-area preview** — temporary non-click-through preview mode for placement tuning | layout inspectors | Helps set margins/corners without guessing |
 | 10 | **Minimal preferences window** — tray-opened settings surface for the most-used config keys | settings UI | Removes config-file friction while keeping the card calm |
+
+## Next top 10, round 4
+
+After shipping high contrast, safe margin tuning, recent recovery, and
+familiarity dimming, the next editor-inspired opportunities are mostly about
+review loops, validation, and making settings less file-centric.
+
+| # | Idea | Inspired by | Why it fits |
+|---|------|-------------|-------------|
+| 1 | **Import dry-run command** — validate seed/Mongo word data before loading | import previews | Catches bad data before it reaches the ambient surface |
+| 2 | **Deck health severity levels** — errors/warnings/info in the copied report | problems panel | Makes data cleanup less flat and easier to prioritize |
+| 3 | **Focus-hours config** — auto-pause during configured local time windows | focus modes | Keeps the overlay respectful during meetings and deep work |
+| 4 | **Quiet review queue** — slightly boost words copied/recently revisited | review queues | Turns user intent into memory weight without a quiz UI |
+| 5 | **Daily Markdown rollup** — optional local log of shown words by date | activity logs | Gives passive learning a durable trail for later review |
+| 6 | **Minimal preferences window** — tray-opened controls for common config keys | settings UI | Removes config-file friction for visual tuning |
+| 7 | **Placement preview mode** — temporary visible safe-area guides | layout inspectors | Helps tune corner/margin without guessing from config |
+| 8 | **Accent swatches** — curated calm accent presets, still one accent at a time | theme pickers | Avoids arbitrary noisy colors while allowing personality |
+| 9 | **Deck source badge in health report** — Mongo/fallback/bench source metadata | status bars | Makes reports easier to interpret when debugging data |
+| 10 | **Session reset action** — clear counter/history without restarting the app | command palettes | Useful after changing decks or starting a new study block |
 
 > This file is the running design backlog for an iterative improvement loop:
 > each round ships the highest value-to-effort item still on-concept and proposes

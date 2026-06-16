@@ -11,10 +11,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   current word interval.
 - Optional `accent_color` config sets the subtle highlight/progress accent.
 - Optional `session_counter` config draws a tiny words-shown count.
+- Optional `high_contrast` config strengthens the card material, border, and
+  secondary text.
+- Optional `screen_margin` config tunes the card distance from the selected
+  screen edges.
+- Optional `familiarity_dimming` config slightly quiets words already shown in
+  the current app session.
 - Tray actions for speaking/copying the current word, copying a Markdown
-  session summary, copying an Anki-ready TSV export, copying a deck health
-  report, toggling recall mode, and toggling the pace indicator during the
-  current session.
+  recent-words list, copying a Markdown session summary, copying an Anki-ready
+  TSV export, copying a deck health report, toggling recall mode, and toggling
+  the pace indicator during the current session.
 - Checked tray menu state for paused, recall, and pace-indicator modes.
 - Soft headword emphasis inside example sentences when the visible word appears
   as a whole word.

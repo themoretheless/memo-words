@@ -37,6 +37,7 @@ fn main() -> eframe::Result<()> {
                 next: MenuId::from("next"),
                 speak: MenuId::from("speak"),
                 copy: MenuId::from("copy"),
+                copy_recent: MenuId::from("copy_recent"),
                 copy_summary: MenuId::from("copy_summary"),
                 copy_anki: MenuId::from("copy_anki"),
                 copy_health: MenuId::from("copy_health"),
@@ -53,6 +54,7 @@ fn main() -> eframe::Result<()> {
         let next_item = MenuItem::new("Next word", true, None);
         let speak_item = MenuItem::new("Speak current word", true, None);
         let copy_item = MenuItem::new("Copy current word", true, None);
+        let recent_item = MenuItem::new("Copy recent words", true, None);
         let summary_item = MenuItem::new("Copy session summary", true, None);
         let anki_item = MenuItem::new("Copy session as Anki TSV", true, None);
         let health_item = MenuItem::new("Copy deck health report", true, None);
@@ -64,6 +66,7 @@ fn main() -> eframe::Result<()> {
             next: next_item.id().clone(),
             speak: speak_item.id().clone(),
             copy: copy_item.id().clone(),
+            copy_recent: recent_item.id().clone(),
             copy_summary: summary_item.id().clone(),
             copy_anki: anki_item.id().clone(),
             copy_health: health_item.id().clone(),
@@ -80,6 +83,7 @@ fn main() -> eframe::Result<()> {
         menu.append(&next_item).unwrap();
         menu.append(&speak_item).unwrap();
         menu.append(&copy_item).unwrap();
+        menu.append(&recent_item).unwrap();
         menu.append(&summary_item).unwrap();
         menu.append(&anki_item).unwrap();
         menu.append(&health_item).unwrap();
