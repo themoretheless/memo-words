@@ -39,6 +39,32 @@ pub struct Rgb {
 
 impl Rgb {
     fn parse(s: &str) -> Option<Self> {
+        match s.trim().to_ascii_lowercase().as_str() {
+            "plain" => return Some(DEFAULT_ACCENT_COLOR),
+            "mint" => {
+                return Some(Self {
+                    r: 127,
+                    g: 209,
+                    b: 174,
+                });
+            }
+            "sky" => {
+                return Some(Self {
+                    r: 120,
+                    g: 178,
+                    b: 255,
+                });
+            }
+            "rose" => {
+                return Some(Self {
+                    r: 244,
+                    g: 143,
+                    b: 177,
+                });
+            }
+            _ => {}
+        }
+
         let hex = s.trim().strip_prefix('#').unwrap_or(s.trim());
         if hex.len() != 6 {
             return None;
@@ -294,6 +320,35 @@ mod tests {
     }
 
     #[test]
+    fn rgb_parse_accepts_named_swatches() {
+        assert_eq!(Rgb::parse("plain"), Some(DEFAULT_ACCENT_COLOR));
+        assert_eq!(
+            Rgb::parse("mint"),
+            Some(Rgb {
+                r: 127,
+                g: 209,
+                b: 174
+            })
+        );
+        assert_eq!(
+            Rgb::parse("SKY"),
+            Some(Rgb {
+                r: 120,
+                g: 178,
+                b: 255
+            })
+        );
+        assert_eq!(
+            Rgb::parse("rose"),
+            Some(Rgb {
+                r: 244,
+                g: 143,
+                b: 177
+            })
+        );
+    }
+
+    #[test]
     fn rgb_parse_rejects_invalid_values() {
         assert_eq!(Rgb::parse("#123"), None);
         assert_eq!(Rgb::parse("#zzzzzz"), None);
@@ -430,6 +485,19 @@ mod tests {
 
         let cfg = Config::default().merge_str("accent_color = nope");
         assert_eq!(cfg.accent_color, DEFAULT_ACCENT_COLOR);
+    }
+
+    #[test]
+    fn merge_str_parses_accent_swatches() {
+        let cfg = Config::default().merge_str("accent_color = mint");
+        assert_eq!(
+            cfg.accent_color,
+            Rgb {
+                r: 127,
+                g: 209,
+                b: 174
+            }
+        );
     }
 
     #[test]

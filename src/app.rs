@@ -578,17 +578,41 @@ fn format_deck_health_report(words: &[Word]) -> String {
 
     let mut out = String::from("# Memo Words deck health\n\n");
     out.push_str(&format!("Words: {}\n", words.len()));
-    out.push_str(&format!("Missing transcription: {missing_transcription}\n"));
-    out.push_str(&format!("Missing translation: {missing_translation}\n"));
-    out.push_str(&format!("Missing example: {missing_example}\n"));
-    out.push_str(&format!("Invalid frequency: {invalid_frequency}\n"));
-    out.push_str(&format!("Duplicate words: {}\n", duplicates.len()));
 
-    if !duplicates.is_empty() {
-        out.push_str("\nDuplicates:\n");
-        for (word, count) in duplicates {
-            out.push_str(&format!("- {word} x{count}\n"));
+    out.push_str("\n## Errors\n");
+    if invalid_frequency == 0 && duplicates.is_empty() {
+        out.push_str("- None\n");
+    } else {
+        if invalid_frequency > 0 {
+            out.push_str(&format!("- Invalid frequency: {invalid_frequency}\n"));
         }
+        if !duplicates.is_empty() {
+            out.push_str(&format!("- Duplicate words: {}\n", duplicates.len()));
+            for (word, count) in duplicates {
+                out.push_str(&format!("  - {word} x{count}\n"));
+            }
+        }
+    }
+
+    out.push_str("\n## Warnings\n");
+    if missing_transcription == 0 && missing_translation == 0 {
+        out.push_str("- None\n");
+    } else {
+        if missing_transcription > 0 {
+            out.push_str(&format!(
+                "- Missing transcription: {missing_transcription}\n"
+            ));
+        }
+        if missing_translation > 0 {
+            out.push_str(&format!("- Missing translation: {missing_translation}\n"));
+        }
+    }
+
+    out.push_str("\n## Info\n");
+    if missing_example == 0 {
+        out.push_str("- None\n");
+    } else {
+        out.push_str(&format!("- Missing example: {missing_example}\n"));
     }
 
     out
@@ -783,7 +807,7 @@ mod tests {
                 word: format!("w{i}"),
                 transcription: format!("/w{i}/"),
                 translation: format!("word {i}"),
-                frequency: i as i32 + 1,
+                frequency: i + 1,
                 example: String::new(),
             })
             .collect();
@@ -860,7 +884,25 @@ mod tests {
         assert!(report.contains("Missing example: 1"));
         assert!(report.contains("Invalid frequency: 1"));
         assert!(report.contains("Duplicate words: 1"));
-        assert!(report.contains("- time x2"));
+        assert!(report.contains("  - time x2"));
+        assert!(report.contains("## Errors"));
+        assert!(report.contains("## Warnings"));
+        assert!(report.contains("## Info"));
+    }
+
+    #[test]
+    fn format_deck_health_report_marks_clean_sections() {
+        let words = vec![Word {
+            word: "time".into(),
+            transcription: "/taɪm/".into(),
+            translation: "time".into(),
+            frequency: 70,
+            example: "What time is it?".into(),
+        }];
+
+        let report = format_deck_health_report(&words);
+
+        assert_eq!(report.matches("- None").count(), 3);
     }
 
     #[test]

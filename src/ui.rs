@@ -224,7 +224,7 @@ fn is_left_word_boundary(text: &str, idx: usize) -> bool {
     text[..idx]
         .chars()
         .next_back()
-        .map_or(true, |c| !c.is_ascii_alphanumeric())
+        .is_none_or(|c| !c.is_ascii_alphanumeric())
 }
 
 fn is_right_word_boundary(text: &str, idx: usize) -> bool {
@@ -235,7 +235,7 @@ fn is_right_word_boundary(text: &str, idx: usize) -> bool {
     text[idx..]
         .chars()
         .next()
-        .map_or(true, |c| !c.is_ascii_alphanumeric())
+        .is_none_or(|c| !c.is_ascii_alphanumeric())
 }
 
 pub fn find_word_span(text: &str, word: &str) -> Option<(usize, usize)> {
@@ -538,7 +538,7 @@ impl<'a> CardView<'a> {
     fn paint_session_counter(&self, ui: &mut egui::Ui, widget_rect: egui::Rect) {
         let text = self.session_count.to_string();
         let galley = ui.painter().layout_no_wrap(
-            text.into(),
+            text,
             egui::FontId::proportional(COUNTER_FONT_SIZE),
             egui::Color32::PLACEHOLDER,
         );

@@ -10,6 +10,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Optional `pace_indicator` config draws a faint progress underline for the
   current word interval.
 - Optional `accent_color` config sets the subtle highlight/progress accent.
+  It accepts RGB hex values plus calm named swatches: `plain`, `mint`, `sky`,
+  and `rose`.
 - Optional `session_counter` config draws a tiny words-shown count.
 - Optional `high_contrast` config strengthens the card material, border, and
   secondary text.
@@ -34,6 +36,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - README/config example now document appearance, recall, and pace options.
 - Benchmark output now includes `active_repaints` to separate app-requested
   animation/progress repaints from platform-driven frames.
+- Copied deck health reports are grouped into errors, warnings, and info so
+  cleanup priority is easier to scan.
 
 ## [0.2.0]
 

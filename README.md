@@ -77,7 +77,7 @@ no change.
 | `screen_margin`       | `40`           | Card distance from the selected screen edges, in points.        |
 | `recall_mode`         | `false`        | Hold the translation back until late in the interval for active recall. |
 | `pace_indicator`      | `false`        | Draw a faint progress underline for the current word interval. |
-| `accent_color`        | `#E6E6E6`      | Subtle RGB hex accent for example emphasis and the pace indicator. |
+| `accent_color`        | `#E6E6E6`      | Subtle accent for example emphasis and the pace indicator: hex, `plain`, `mint`, `sky`, or `rose`. |
 | `session_counter`     | `false`        | Draw a tiny count of words shown in the current session. |
 | `high_contrast`       | `false`        | Strengthen card material, border, and secondary text alphas. |
 | `familiarity_dimming` | `false`        | Slightly dim words already seen in the current session. |
@@ -91,7 +91,7 @@ corner = top-right
 screen_margin = 56
 speak = true
 pace_indicator = true
-accent_color = #7FD1AE
+accent_color = mint
 session_counter = true
 high_contrast = true
 familiarity_dimming = true
@@ -106,8 +106,8 @@ familiarity_dimming = true
 - **Copy session summary** - copy a Markdown recap of words shown this session.
 - **Copy session as Anki TSV** - copy tab-separated `word`, `translation`,
   `transcription`, and `example` columns for flashcard import.
-- **Copy deck health report** - copy a Markdown data-quality report for missing
-  fields, invalid frequencies, and duplicate words.
+- **Copy deck health report** - copy a Markdown data-quality report grouped by
+  errors, warnings, and info.
 - **Reset session** - clear the current session history, count, and familiarity
   dimming state without restarting the app.
 - **Recall mode** - checked when the delayed-translation reveal is enabled for
