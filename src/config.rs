@@ -72,8 +72,122 @@ impl Rgb {
         let r = u8::from_str_radix(&hex[0..2], 16).ok()?;
         let g = u8::from_str_radix(&hex[2..4], 16).ok()?;
         let b = u8::from_str_radix(&hex[4..6], 16).ok()?;
-        Some(Self { r, g, b })
+        Some(guard_accent_color(Self { r, g, b }))
     }
+}
+
+fn guard_accent_color(rgb: Rgb) -> Rgb {
+    let luma = accent_luma(rgb);
+    if luma < MIN_ACCENT_LUMA {
+        let mix = (MIN_ACCENT_LUMA - luma) / (255.0 - luma);
+        return Rgb {
+            r: mix_channel(rgb.r, 255, mix),
+            g: mix_channel(rgb.g, 255, mix),
+            b: mix_channel(rgb.b, 255, mix),
+        };
+    }
+    if luma > MAX_ACCENT_LUMA {
+        let factor = MAX_ACCENT_LUMA / luma;
+        return Rgb {
+            r: (f32::from(rgb.r) * factor).round() as u8,
+            g: (f32::from(rgb.g) * factor).round() as u8,
+            b: (f32::from(rgb.b) * factor).round() as u8,
+        };
+    }
+    rgb
+}
+
+fn accent_luma(rgb: Rgb) -> f32 {
+    0.2126 * f32::from(rgb.r) + 0.7152 * f32::from(rgb.g) + 0.0722 * f32::from(rgb.b)
+}
+
+fn mix_channel(from: u8, to: u8, amount: f32) -> u8 {
+    (f32::from(from) + (f32::from(to) - f32::from(from)) * amount).round() as u8
+}
+
+const MAX_FOCUS_WINDOWS: usize = 4;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FocusWindow {
+    start_minute: u16,
+    end_minute: u16,
+}
+
+impl FocusWindow {
+    fn parse(s: &str) -> Option<Self> {
+        let (start, end) = s.trim().split_once('-')?;
+        let start_minute = parse_clock_minute(start)?;
+        let end_minute = parse_clock_minute(end)?;
+        (start_minute != end_minute).then_some(Self {
+            start_minute,
+            end_minute,
+        })
+    }
+
+    fn contains_minute(&self, minute: u16) -> bool {
+        if self.start_minute < self.end_minute {
+            (self.start_minute..self.end_minute).contains(&minute)
+        } else {
+            minute >= self.start_minute || minute < self.end_minute
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FocusHours {
+    windows: [Option<FocusWindow>; MAX_FOCUS_WINDOWS],
+}
+
+impl FocusHours {
+    fn parse(s: &str) -> Option<Self> {
+        let trimmed = s.trim();
+        if trimmed.is_empty()
+            || matches!(
+                trimmed.to_ascii_lowercase().as_str(),
+                "off" | "none" | "false" | "0"
+            )
+        {
+            return Some(Self::default());
+        }
+
+        let mut windows = [None; MAX_FOCUS_WINDOWS];
+        let mut count = 0;
+        for part in trimmed.split(',') {
+            if count == MAX_FOCUS_WINDOWS {
+                break;
+            }
+            windows[count] = Some(FocusWindow::parse(part)?);
+            count += 1;
+        }
+        (count > 0).then_some(Self { windows })
+    }
+
+    pub fn contains_minute(&self, minute: u16) -> bool {
+        self.windows
+            .iter()
+            .flatten()
+            .any(|window| window.contains_minute(minute))
+    }
+
+    #[cfg(test)]
+    pub fn is_empty(&self) -> bool {
+        self.windows.iter().all(Option::is_none)
+    }
+}
+
+impl Default for FocusHours {
+    fn default() -> Self {
+        Self {
+            windows: [None; MAX_FOCUS_WINDOWS],
+        }
+    }
+}
+
+fn parse_clock_minute(s: &str) -> Option<u16> {
+    let (hour, minute) = s.trim().split_once(':')?;
+    let hour = hour.parse::<u16>().ok()?;
+    let minute = minute.parse::<u16>().ok()?;
+    (hour < 24 && minute < 60).then_some(hour * 60 + minute)
 }
 
 /// Upper bound for second-valued knobs (`interval_secs`, `jitter_secs`).
@@ -101,6 +215,9 @@ pub const DEFAULT_ACCENT_COLOR: Rgb = Rgb {
 const MAX_CORNER_RADIUS: f32 = 64.0;
 /// Max practical edge margin for an ambient corner card.
 const MAX_SCREEN_MARGIN: f32 = 240.0;
+const MAX_COOLDOWN_WORDS: usize = 1_000;
+const MIN_ACCENT_LUMA: f32 = 72.0;
+const MAX_ACCENT_LUMA: f32 = 238.0;
 
 #[derive(Debug, Clone, Copy)]
 pub struct Config {
@@ -131,6 +248,20 @@ pub struct Config {
     pub high_contrast: bool,
     /// Slightly dim words that have already appeared in this app session.
     pub familiarity_dimming: bool,
+    /// Local quiet windows during which word rotation pauses automatically.
+    pub focus_hours: FocusHours,
+    /// Append shown words to a daily Markdown rollup.
+    pub daily_rollup: bool,
+    /// Boost copied/revisited words slightly in future rotation.
+    pub quiet_review_weighting: bool,
+    /// Temporary visual guides for corner and margin tuning.
+    pub placement_preview: bool,
+    /// Show a small in-app preferences window on launch.
+    pub preferences_open: bool,
+    /// Freeze the current word on launch while keeping tray actions available.
+    pub session_frozen: bool,
+    /// Override the recent-word cooldown window. `0` keeps the deck auto-size.
+    pub cooldown_words: usize,
 }
 
 impl Default for Config {
@@ -152,6 +283,13 @@ impl Default for Config {
             session_counter: false,
             high_contrast: false,
             familiarity_dimming: false,
+            focus_hours: FocusHours::default(),
+            daily_rollup: false,
+            quiet_review_weighting: false,
+            placement_preview: false,
+            preferences_open: false,
+            session_frozen: false,
+            cooldown_words: 0,
         }
     }
 }
@@ -168,7 +306,7 @@ impl Config {
     /// skipped; unknown keys and unparseable values are ignored so a malformed
     /// file never changes a field from its default. Pure (no I/O) so it is unit
     /// testable without touching the environment or filesystem.
-    fn merge_str(mut self, text: &str) -> Self {
+    pub(crate) fn merge_str(mut self, text: &str) -> Self {
         let cfg = &mut self;
         for line in text.lines() {
             let line = line.trim();
@@ -271,6 +409,46 @@ impl Config {
                         "true" | "1" | "yes" | "on"
                     );
                 }
+                "focus_hours" => {
+                    if let Some(v) = FocusHours::parse(value) {
+                        cfg.focus_hours = v;
+                    }
+                }
+                "daily_rollup" => {
+                    cfg.daily_rollup = matches!(
+                        value.to_ascii_lowercase().as_str(),
+                        "true" | "1" | "yes" | "on"
+                    );
+                }
+                "quiet_review_weighting" => {
+                    cfg.quiet_review_weighting = matches!(
+                        value.to_ascii_lowercase().as_str(),
+                        "true" | "1" | "yes" | "on"
+                    );
+                }
+                "placement_preview" => {
+                    cfg.placement_preview = matches!(
+                        value.to_ascii_lowercase().as_str(),
+                        "true" | "1" | "yes" | "on"
+                    );
+                }
+                "preferences_open" => {
+                    cfg.preferences_open = matches!(
+                        value.to_ascii_lowercase().as_str(),
+                        "true" | "1" | "yes" | "on"
+                    );
+                }
+                "session_frozen" => {
+                    cfg.session_frozen = matches!(
+                        value.to_ascii_lowercase().as_str(),
+                        "true" | "1" | "yes" | "on"
+                    );
+                }
+                "cooldown_words" => {
+                    if let Ok(v) = value.parse::<usize>() {
+                        cfg.cooldown_words = v.min(MAX_COOLDOWN_WORDS);
+                    }
+                }
                 _ => {}
             }
         }
@@ -352,6 +530,34 @@ mod tests {
     fn rgb_parse_rejects_invalid_values() {
         assert_eq!(Rgb::parse("#123"), None);
         assert_eq!(Rgb::parse("#zzzzzz"), None);
+    }
+
+    #[test]
+    fn rgb_parse_guards_extreme_custom_accents() {
+        let dark = Rgb::parse("#000000").unwrap();
+        assert!(accent_luma(dark) >= MIN_ACCENT_LUMA);
+
+        let bright = Rgb::parse("#FFFFFF").unwrap();
+        assert!(accent_luma(bright) <= MAX_ACCENT_LUMA);
+    }
+
+    #[test]
+    fn focus_hours_parse_matches_day_and_overnight_windows() {
+        let hours = FocusHours::parse("09:00-17:30, 22:00-01:00").unwrap();
+
+        assert!(hours.contains_minute(9 * 60));
+        assert!(hours.contains_minute(17 * 60 + 29));
+        assert!(!hours.contains_minute(17 * 60 + 30));
+        assert!(hours.contains_minute(23 * 60));
+        assert!(hours.contains_minute(30));
+        assert!(!hours.contains_minute(2 * 60));
+    }
+
+    #[test]
+    fn focus_hours_parse_accepts_off_and_rejects_bad_times() {
+        assert!(FocusHours::parse("off").unwrap().is_empty());
+        assert!(FocusHours::parse("24:00-25:00").is_none());
+        assert!(FocusHours::parse("09:00-09:00").is_none());
     }
 
     #[test]
@@ -543,5 +749,32 @@ mod tests {
                 .merge_str("familiarity_dimming = no")
                 .familiarity_dimming
         );
+    }
+
+    #[test]
+    fn merge_str_parses_round_six_keys() {
+        let cfg = Config::default().merge_str(
+            "focus_hours = 09:00-17:00\n\
+             daily_rollup = yes\n\
+             quiet_review_weighting = on\n\
+             placement_preview = true\n\
+             preferences_open = 1\n\
+             session_frozen = yes\n\
+             cooldown_words = 25",
+        );
+
+        assert!(cfg.focus_hours.contains_minute(12 * 60));
+        assert!(cfg.daily_rollup);
+        assert!(cfg.quiet_review_weighting);
+        assert!(cfg.placement_preview);
+        assert!(cfg.preferences_open);
+        assert!(cfg.session_frozen);
+        assert_eq!(cfg.cooldown_words, 25);
+    }
+
+    #[test]
+    fn merge_str_clamps_cooldown_words() {
+        let cfg = Config::default().merge_str("cooldown_words = 999999");
+        assert_eq!(cfg.cooldown_words, 1_000);
     }
 }

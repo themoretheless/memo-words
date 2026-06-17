@@ -6,7 +6,7 @@ mod selector;
 mod tray;
 mod ui;
 
-use db::{MongoWordSource, StaticWordSource, WithFallback, Word, WordSource};
+use db::{MongoWordSource, StaticWordSource, Word, WordSource, WordSourceKind, fallback_words};
 use deck::Deck;
 use muda::{CheckMenuItem, Menu, MenuId, MenuItem};
 use selector::FrequencyWeighted;
@@ -15,21 +15,58 @@ use tray_icon::TrayIconBuilder;
 fn main() -> eframe::Result<()> {
     let cfg = config::Config::load();
     let bench = std::env::var("MEMO_BENCH").is_ok();
+    let dry_run = std::env::var("MEMO_DRY_RUN").is_ok()
+        || std::env::args().any(|arg| arg == "--dry-run" || arg == "--validate-deck");
 
     // Composition root: pick the concrete word source here, behind the
     // WordSource trait, so nothing downstream depends on MongoDB directly.
-    let source: Box<dyn WordSource> = if bench {
-        Box::new(StaticWordSource(vec![Word {
+    let (words, source_kind) = if bench {
+        let source = StaticWordSource(vec![Word {
             word: "benchmark".into(),
             transcription: "/ˈbentʃmɑːk/".into(),
             translation: "эталонный тест".into(),
             frequency: 1,
             example: "We ran the benchmark twice.".into(),
-        }]))
+        }]);
+        (source.load(), WordSourceKind::Bench)
     } else {
-        Box::new(WithFallback(MongoWordSource::default()))
+        let source = MongoWordSource::default();
+        let words = source.load();
+        if words.is_empty() {
+            let fallback = fallback_words();
+            eprintln!(
+                "Using built-in fallback word set ({} words).",
+                fallback.len()
+            );
+            (fallback, WordSourceKind::Fallback)
+        } else {
+            (words, WordSourceKind::Mongo)
+        }
     };
-    let deck = Deck::new(source.load(), Box::new(FrequencyWeighted));
+
+    if dry_run {
+        print!(
+            "{}",
+            app::format_deck_health_report(
+                &words,
+                source_kind,
+                if cfg.cooldown_words == 0 {
+                    (words.len() / 3).min(100)
+                } else {
+                    cfg.cooldown_words.min(words.len().saturating_sub(1))
+                },
+                cfg.quiet_review_weighting,
+            )
+        );
+        return Ok(());
+    }
+
+    let deck = Deck::with_options(
+        words,
+        Box::new(FrequencyWeighted),
+        cfg.cooldown_words,
+        cfg.quiet_review_weighting,
+    );
 
     let (menu_ids, menu_checks, menu) = if bench {
         (
@@ -44,6 +81,9 @@ fn main() -> eframe::Result<()> {
                 reset_session: MenuId::from("reset_session"),
                 toggle_recall: MenuId::from("toggle_recall"),
                 toggle_pace: MenuId::from("toggle_pace"),
+                toggle_preview: MenuId::from("toggle_preview"),
+                toggle_preferences: MenuId::from("toggle_preferences"),
+                toggle_freeze: MenuId::from("toggle_freeze"),
                 pause: MenuId::from("pause"),
                 quit: MenuId::from("quit"),
             },
@@ -62,6 +102,10 @@ fn main() -> eframe::Result<()> {
         let reset_item = MenuItem::new("Reset session", true, None);
         let recall_item = CheckMenuItem::new("Recall mode", true, cfg.recall_mode, None);
         let pace_item = CheckMenuItem::new("Pace indicator", true, cfg.pace_indicator, None);
+        let preview_item =
+            CheckMenuItem::new("Placement preview", true, cfg.placement_preview, None);
+        let preferences_item = CheckMenuItem::new("Preferences", true, cfg.preferences_open, None);
+        let freeze_item = CheckMenuItem::new("Freeze current word", true, cfg.session_frozen, None);
         let pause_item = CheckMenuItem::new("Paused", true, false, None);
         let quit_item = MenuItem::new("Quit", true, None);
         let menu_ids = app::MenuIds {
@@ -75,6 +119,9 @@ fn main() -> eframe::Result<()> {
             reset_session: reset_item.id().clone(),
             toggle_recall: recall_item.id().clone(),
             toggle_pace: pace_item.id().clone(),
+            toggle_preview: preview_item.id().clone(),
+            toggle_preferences: preferences_item.id().clone(),
+            toggle_freeze: freeze_item.id().clone(),
             pause: pause_item.id().clone(),
             quit: quit_item.id().clone(),
         };
@@ -82,6 +129,9 @@ fn main() -> eframe::Result<()> {
             pause: pause_item.clone(),
             recall: recall_item.clone(),
             pace: pace_item.clone(),
+            preview: preview_item.clone(),
+            preferences: preferences_item.clone(),
+            freeze: freeze_item.clone(),
         };
         menu.append(&next_item).unwrap();
         menu.append(&speak_item).unwrap();
@@ -93,6 +143,9 @@ fn main() -> eframe::Result<()> {
         menu.append(&reset_item).unwrap();
         menu.append(&recall_item).unwrap();
         menu.append(&pace_item).unwrap();
+        menu.append(&preview_item).unwrap();
+        menu.append(&preferences_item).unwrap();
+        menu.append(&freeze_item).unwrap();
         menu.append(&pause_item).unwrap();
         menu.append(&quit_item).unwrap();
         (menu_ids, Some(menu_checks), Some(menu))
@@ -129,6 +182,7 @@ fn main() -> eframe::Result<()> {
                 menu_ids.clone(),
                 menu_checks.clone(),
                 cfg,
+                source_kind,
             )))
         }),
     )

@@ -64,8 +64,8 @@ adding leverage.
 | 5 | **Accent color config** — shipped as `accent_color` for example emphasis and progress fill | theme settings | Adds personality without turning the card into a theme park |
 | 6 | **High-contrast preset** — shipped as `high_contrast`, strengthening fill, border, and secondary text alphas | accessibility themes | Helps on bright or busy wallpapers |
 | 7 | **Session word counter** — shipped as optional `session_counter`, a tiny status-style count on the card | editor status bar | Gives motivation with almost no extra visual weight |
-| 8 | **Focus-hours config** — pause automatically during configured time windows | focus modes | Keeps the overlay respectful during deep work or calls |
-| 9 | **Import preview command** — validate seed data before writing MongoDB | import previews | Prevents bad deck data from reaching the app |
+| 8 | **Focus-hours config** — shipped as `focus_hours` local quiet windows | focus modes | Keeps the overlay respectful during deep work or calls |
+| 9 | **Import preview command** — shipped as `MEMO_DRY_RUN=1` / `--dry-run` deck validation | import previews | Prevents bad deck data from reaching the app |
 | 10 | **Safe margins** — shipped global `screen_margin`; per-monitor/per-corner margins can follow | editor layout settings | Makes placement feel deliberate across different desktops |
 
 ## Next top 10, round 3
@@ -77,14 +77,14 @@ review, and respectful automation.
 |---|------|-------------|-------------|
 | 1 | **Recently shown recovery** — shipped as "Copy recent words" for the last 5 items; a dynamic submenu can follow | recent files | Recover a missed word without adding controls to the card |
 | 2 | **Seen-frequency dimming** — shipped as optional `familiarity_dimming`; repeated session words become slightly quieter | editor diagnostics fading | Lets novelty stand out while keeping the same rotation model |
-| 3 | **Smart cooldown by word** — prevent the same word from returning for a longer configurable span | debounce/cooldown controls | Improves variety beyond the current recent window |
-| 4 | **Focus-hours config** — auto-pause during configured time windows | focus modes | Respectful during meetings or deep work |
+| 3 | **Smart cooldown by word** — shipped as `cooldown_words` for configurable recent-window length | debounce/cooldown controls | Improves variety beyond the current recent window |
+| 4 | **Focus-hours config** — shipped as auto-pause during configured local time windows | focus modes | Respectful during meetings or deep work |
 | 5 | **High-contrast preset** — shipped as `high_contrast` for stronger material/text/border | accessibility themes | Better legibility on bright wallpapers |
 | 6 | **Deck health severity levels** — shipped as error/warning/info sections in the copied report | problems panel | Makes the health report easier to scan |
-| 7 | **Import dry-run script** — validate `seed_words.js` shape before writing MongoDB | import preview | Prevents data cleanup from happening after the fact |
-| 8 | **Daily rollup file** — append shown words to a local Markdown log | editor activity logs | Gives passive learning a durable trail |
-| 9 | **Corner safe-area preview** — temporary non-click-through preview mode for placement tuning | layout inspectors | Helps set margins/corners without guessing |
-| 10 | **Minimal preferences window** — tray-opened settings surface for the most-used config keys | settings UI | Removes config-file friction while keeping the card calm |
+| 7 | **Import dry-run script** — shipped as dry-run deck validation before opening the UI | import preview | Prevents data cleanup from happening after the fact |
+| 8 | **Daily rollup file** — shipped as optional `daily_rollup` Markdown append | editor activity logs | Gives passive learning a durable trail |
+| 9 | **Corner safe-area preview** — shipped as `placement_preview` guides | layout inspectors | Helps set margins/corners without guessing |
+| 10 | **Minimal preferences window** — shipped as a tray-opened settings surface | settings UI | Removes config-file friction while keeping the card calm |
 
 ## Next top 10, round 4
 
@@ -94,15 +94,15 @@ review loops, validation, and making settings less file-centric.
 
 | # | Idea | Inspired by | Why it fits |
 |---|------|-------------|-------------|
-| 1 | **Import dry-run command** — validate seed/Mongo word data before loading | import previews | Catches bad data before it reaches the ambient surface |
+| 1 | **Import dry-run command** — shipped as `MEMO_DRY_RUN=1` / `--dry-run` | import previews | Catches bad data before it reaches the ambient surface |
 | 2 | **Deck health severity levels** — shipped as errors/warnings/info in the copied report | problems panel | Makes data cleanup less flat and easier to prioritize |
-| 3 | **Focus-hours config** — auto-pause during configured local time windows | focus modes | Keeps the overlay respectful during meetings and deep work |
-| 4 | **Quiet review queue** — slightly boost words copied/recently revisited | review queues | Turns user intent into memory weight without a quiz UI |
-| 5 | **Daily Markdown rollup** — optional local log of shown words by date | activity logs | Gives passive learning a durable trail for later review |
-| 6 | **Minimal preferences window** — tray-opened controls for common config keys | settings UI | Removes config-file friction for visual tuning |
-| 7 | **Placement preview mode** — temporary visible safe-area guides | layout inspectors | Helps tune corner/margin without guessing from config |
+| 3 | **Focus-hours config** — shipped as `focus_hours` | focus modes | Keeps the overlay respectful during meetings and deep work |
+| 4 | **Quiet review queue** — shipped as `quiet_review_weighting` for copied/revisited words | review queues | Turns user intent into memory weight without a quiz UI |
+| 5 | **Daily Markdown rollup** — shipped as `daily_rollup` | activity logs | Gives passive learning a durable trail for later review |
+| 6 | **Minimal preferences window** — shipped as tray-opened controls for common config keys | settings UI | Removes config-file friction for visual tuning |
+| 7 | **Placement preview mode** — shipped as visible safe-area guides | layout inspectors | Helps tune corner/margin without guessing from config |
 | 8 | **Accent swatches** — shipped as curated calm accent presets, still one accent at a time | theme pickers | Avoids arbitrary noisy colors while allowing personality |
-| 9 | **Deck source badge in health report** — Mongo/fallback/bench source metadata | status bars | Makes reports easier to interpret when debugging data |
+| 9 | **Deck source badge in health report** — shipped as Mongo/fallback/bench source metadata | status bars | Makes reports easier to interpret when debugging data |
 | 10 | **Session reset action** — shipped as Reset session, clearing history/count/familiarity without restart | command palettes | Useful after changing decks or starting a new study block |
 
 ## Next top 10, round 5
@@ -113,16 +113,16 @@ to tune.
 
 | # | Idea | Inspired by | Why it fits |
 |---|------|-------------|-------------|
-| 1 | **Focus-hours config** — auto-pause during configured local time windows | focus modes | Prevents the overlay from intruding during calls or deep work |
+| 1 | **Focus-hours config** — shipped as auto-pause during configured local time windows | focus modes | Prevents the overlay from intruding during calls or deep work |
 | 2 | **Deck health severity levels** — shipped as copied report sections for errors, warnings, and info | problems panel | Makes cleanup priority obvious at a glance |
-| 3 | **Daily Markdown rollup** — append shown words to a dated local note | activity logs | Turns ambient exposure into reviewable notes |
-| 4 | **Import dry-run command** — validate seed/Mongo data before writes | import previews | Keeps bad rows out of the deck before they become UI issues |
-| 5 | **Quiet review weighting** — boost words copied/recently revisited | review queues | Uses user intent as a study signal without quizzes |
+| 3 | **Daily Markdown rollup** — shipped as shown words appended to a dated local note | activity logs | Turns ambient exposure into reviewable notes |
+| 4 | **Import dry-run command** — shipped as dry-run deck validation | import previews | Keeps bad rows out of the deck before they become UI issues |
+| 5 | **Quiet review weighting** — shipped as boost for copied/recently revisited words | review queues | Uses user intent as a study signal without quizzes |
 | 6 | **Accent swatch names** — shipped as `accent_color = mint/sky/rose/plain` presets | theme palettes | Makes visual tuning friendlier than raw hex for most users |
-| 7 | **Placement preview mode** — temporary visible frame and safe-area guides | layout inspectors | Lets users tune corner/margin confidently |
-| 8 | **Deck source metadata** — include source and word count in tray/report | status bars | Makes fallback-vs-Mongo state easy to diagnose |
-| 9 | **Session freeze action** — pause rotation but keep copy/export available | editor read-only modes | Useful while manually reviewing a word |
-| 10 | **Preferences window MVP** — egui settings window for common toggles | settings UI | Removes config-file friction while preserving the passive card |
+| 7 | **Placement preview mode** — shipped as temporary visible frame and safe-area guides | layout inspectors | Lets users tune corner/margin confidently |
+| 8 | **Deck source metadata** — shipped as source/cooldown/review state in the health report | status bars | Makes fallback-vs-Mongo state easy to diagnose |
+| 9 | **Session freeze action** — shipped as Freeze current word | editor read-only modes | Useful while manually reviewing a word |
+| 10 | **Preferences window MVP** — shipped as an egui settings window for common toggles | settings UI | Removes config-file friction while preserving the passive card |
 
 ## Next top 10, round 6
 
@@ -132,16 +132,35 @@ useful trail outside the overlay.
 
 | # | Idea | Inspired by | Why it fits |
 |---|------|-------------|-------------|
-| 1 | **Focus-hours config** — local quiet windows that auto-pause rotation | focus modes | Keeps the overlay out of calls, recordings, and deep work |
-| 2 | **Daily Markdown rollup** — append shown words to a dated local note | editor activity logs | Makes passive exposure reviewable without changing the card |
-| 3 | **Import dry-run command** — validate seed/Mongo rows before import | import previews | Catches bad fields before they reach the UI |
-| 4 | **Quiet review weighting** — gently boost copied or recently revisited words | review queues | Treats user intent as a study signal without adding quizzes |
-| 5 | **Placement preview mode** — temporary frame and safe-area guides | layout inspectors | Makes corner/margin tuning visual and reversible |
-| 6 | **Deck source metadata** — include Mongo/static/fallback/bench source in reports | status bars | Makes data debugging obvious when the app falls back |
-| 7 | **Minimal preferences window** — tray-opened egui controls for common settings | settings UI | Removes config-file friction for appearance and timing |
-| 8 | **Session freeze action** — stop rotation while keeping copy/export enabled | read-only modes | Supports manual review without losing the current word |
-| 9 | **Smart cooldown config** — tune how long a word stays out of rotation | debounce controls | Improves variety while preserving the current selector model |
-| 10 | **Accent contrast guard** — warn or clamp accents that are too dim/bright | theme diagnostics | Keeps custom colors calm and legible across wallpapers |
+| 1 | **Focus-hours config** — shipped as local quiet windows that auto-pause rotation | focus modes | Keeps the overlay out of calls, recordings, and deep work |
+| 2 | **Daily Markdown rollup** — shipped as shown words appended to a dated local note | editor activity logs | Makes passive exposure reviewable without changing the card |
+| 3 | **Import dry-run command** — shipped as `MEMO_DRY_RUN=1`, `--dry-run`, or `--validate-deck` | import previews | Catches bad fields before they reach the UI |
+| 4 | **Quiet review weighting** — shipped as a gentle boost for copied/recently revisited words | review queues | Treats user intent as a study signal without adding quizzes |
+| 5 | **Placement preview mode** — shipped as temporary frame and safe-area guides | layout inspectors | Makes corner/margin tuning visual and reversible |
+| 6 | **Deck source metadata** — shipped as Mongo/static/fallback/bench source in reports | status bars | Makes data debugging obvious when the app falls back |
+| 7 | **Minimal preferences window** — shipped as tray-opened egui controls for common settings | settings UI | Removes config-file friction for appearance and timing |
+| 8 | **Session freeze action** — shipped as stop-rotation while keeping copy/export enabled | read-only modes | Supports manual review without losing the current word |
+| 9 | **Smart cooldown config** — shipped as `cooldown_words` | debounce controls | Improves variety while preserving the current selector model |
+| 10 | **Accent contrast guard** — shipped as clamping for accents that are too dim/bright | theme diagnostics | Keeps custom colors calm and legible across wallpapers |
+
+## Next top 10, round 7
+
+After the full setup/review/tuning pass, the next ideas move toward richer deck
+quality, better persistence, and multi-context polish while still keeping the
+card itself quiet.
+
+| # | Idea | Inspired by | Why it fits |
+|---|------|-------------|-------------|
+| 1 | **Seed file validator** — parse `seed_words.js` directly and report row/field issues before Mongo import | import linters | Catches source-file mistakes even when Mongo is empty or unavailable |
+| 2 | **Rollup de-dup mode** — collapse repeated words per day with counts | activity logs | Keeps daily notes compact during long sessions |
+| 3 | **Review boost decay** — let copied-word boosts fade after N appearances | spaced repetition queues | Prevents one copied word from staying boosted forever |
+| 4 | **Deck source tray label** — show current source in the tray tooltip | status bars | Makes fallback state visible without opening a report |
+| 5 | **Preferences persistence** — write changed settings back to config on demand | settings editors | Makes the new preferences window useful beyond one session |
+| 6 | **Focus-hours day presets** — weekday/weekend quiet windows | calendar focus modes | Matches real schedules without needing external calendar access |
+| 7 | **Rollup open action** — tray action to open the Markdown rollup file | editor file commands | Connects passive capture to review with one action |
+| 8 | **Deck health score** — summarize report severity as a single status line | diagnostics panels | Makes dry-run output fast to scan |
+| 9 | **Per-corner margin config** — separate horizontal/vertical safe margins | layout inspectors | Handles notches, docks, and unusual monitor setups |
+| 10 | **Accent accessibility report** — include guarded/custom accent luma in health/preferences | theme diagnostics | Helps tune appearance without visual guessing |
 
 > This file is the running design backlog for an iterative improvement loop:
 > each round ships the highest value-to-effort item still on-concept and proposes

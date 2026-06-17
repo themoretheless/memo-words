@@ -15,6 +15,23 @@ pub struct Word {
     pub example: String,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WordSourceKind {
+    Bench,
+    Mongo,
+    Fallback,
+}
+
+impl WordSourceKind {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Bench => "bench",
+            Self::Mongo => "mongo",
+            Self::Fallback => "fallback",
+        }
+    }
+}
+
 /// A place words can be loaded from. Decoupling the app from MongoDB behind
 /// this trait (DIP) lets `main` wire in any concrete source and lets tests use
 /// an in-memory one without a database.
@@ -110,26 +127,7 @@ impl WordSource for StaticWordSource {
     }
 }
 
-/// Wraps a primary source and substitutes the built-in fallback deck whenever
-/// the primary yields nothing (Decorator). Keeps the "Mongo, else fallback"
-/// policy out of `main` and composable with any `WordSource`.
-pub struct WithFallback<S: WordSource>(pub S);
-
-impl<S: WordSource> WordSource for WithFallback<S> {
-    fn load(&self) -> Vec<Word> {
-        let words = self.0.load();
-        if words.is_empty() {
-            eprintln!(
-                "Using built-in fallback word set ({} words).",
-                FALLBACK.len()
-            );
-            return fallback_words();
-        }
-        words
-    }
-}
-
-fn fallback_words() -> Vec<Word> {
+pub fn fallback_words() -> Vec<Word> {
     FALLBACK
         .iter()
         .map(

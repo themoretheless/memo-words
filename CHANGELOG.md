@@ -19,13 +19,22 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   screen edges.
 - Optional `familiarity_dimming` config slightly quiets words already shown in
   the current app session.
+- Optional `focus_hours`, `daily_rollup`, `quiet_review_weighting`,
+  `placement_preview`, `preferences_open`, `session_frozen`, and
+  `cooldown_words` config keys for respectful quiet windows, reviewable logs,
+  placement tuning, runtime preferences, freezing, and smarter rotation.
 - Tray actions for speaking/copying the current word, copying a Markdown
   recent-words list, copying a Markdown session summary, copying an Anki-ready
   TSV export, copying a deck health report, toggling recall mode, and toggling
   the pace indicator during the current session.
+- Tray actions for placement preview, preferences, and freezing the current
+  word.
 - Tray action to reset the current session history, counter, and familiarity
   dimming state without restarting the app.
-- Checked tray menu state for paused, recall, and pace-indicator modes.
+- Checked tray menu state for paused, recall, pace-indicator, placement
+  preview, preferences, and freeze modes.
+- `MEMO_DRY_RUN` / `--dry-run` deck validation prints the Markdown health
+  report without opening the overlay.
 - Soft headword emphasis inside example sentences when the visible word appears
   as a whole word.
 - Designer-curated editor-inspired backlog in `docs/DESIGN_IDEAS.md`.
@@ -38,6 +47,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   animation/progress repaints from platform-driven frames.
 - Copied deck health reports are grouped into errors, warnings, and info so
   cleanup priority is easier to scan.
+- Copied deck health reports include source metadata, cooldown size, and review
+  weighting state.
+- Custom accent hex values are guarded against overly dim or bright choices so
+  highlights stay visible but calm.
 
 ## [0.2.0]
 

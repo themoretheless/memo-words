@@ -1,5 +1,5 @@
 use crate::config::Config;
-use crate::db::Word;
+use crate::db::{Word, WordSourceKind};
 use crate::deck::Deck;
 use crate::ui::{self, CardView};
 use eframe::egui;
@@ -7,6 +7,7 @@ use muda::MenuEvent;
 use rand::RngExt;
 use rand::rng;
 use std::collections::BTreeMap;
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc::{Receiver, Sender};
@@ -39,6 +40,9 @@ pub struct MenuIds {
     pub reset_session: muda::MenuId,
     pub toggle_recall: muda::MenuId,
     pub toggle_pace: muda::MenuId,
+    pub toggle_preview: muda::MenuId,
+    pub toggle_preferences: muda::MenuId,
+    pub toggle_freeze: muda::MenuId,
     pub pause: muda::MenuId,
     pub quit: muda::MenuId,
 }
@@ -48,6 +52,9 @@ pub struct MenuChecks {
     pub pause: muda::CheckMenuItem,
     pub recall: muda::CheckMenuItem,
     pub pace: muda::CheckMenuItem,
+    pub preview: muda::CheckMenuItem,
+    pub preferences: muda::CheckMenuItem,
+    pub freeze: muda::CheckMenuItem,
 }
 
 /// The eframe adapter (a humble object): it owns the timing, tray-menu wiring,
@@ -64,7 +71,11 @@ pub struct App {
     menu_tx: Option<Sender<muda::MenuId>>,
     menu_rx: Receiver<muda::MenuId>,
     paused: bool,
+    session_frozen: bool,
+    show_preferences: bool,
+    mouse_passthrough: bool,
     cfg: Config,
+    source_kind: WordSourceKind,
     word_interval: Duration,
     session_started: Instant,
     session_words: Vec<Word>,
@@ -80,8 +91,10 @@ impl App {
         menu_ids: MenuIds,
         menu_checks: Option<MenuChecks>,
         cfg: Config,
+        source_kind: WordSourceKind,
     ) -> Self {
         let (menu_tx, menu_rx) = std::sync::mpsc::channel();
+        let word_interval = Duration::from_secs(cfg.interval_secs);
         Self {
             deck,
             shown_at: None,
@@ -93,8 +106,12 @@ impl App {
             menu_tx: Some(menu_tx),
             menu_rx,
             paused: false,
+            session_frozen: cfg.session_frozen,
+            show_preferences: cfg.preferences_open,
+            mouse_passthrough: true,
             cfg,
-            word_interval: Duration::from_secs(cfg.interval_secs),
+            source_kind,
+            word_interval,
             session_started: Instant::now(),
             session_words: Vec::new(),
             session_counts: BTreeMap::new(),
@@ -124,6 +141,9 @@ impl App {
                 .entry(normalize_word_key(&w.word))
                 .or_default() += 1;
             self.session_words.push(w.clone());
+            if self.cfg.daily_rollup {
+                append_daily_rollup(w);
+            }
         }
     }
 
@@ -133,9 +153,10 @@ impl App {
         }
     }
 
-    fn copy_current_word(&self, ctx: &egui::Context) {
+    fn copy_current_word(&mut self, ctx: &egui::Context) {
         if let Some(w) = self.deck.current() {
             ctx.copy_text(format_word_clipboard_text(w));
+            self.deck.boost_current_for_review();
         }
     }
 
@@ -146,8 +167,9 @@ impl App {
         ));
     }
 
-    fn copy_recent_words(&self, ctx: &egui::Context) {
+    fn copy_recent_words(&mut self, ctx: &egui::Context) {
         ctx.copy_text(format_recent_words(&self.session_words, RECENT_WORDS_LIMIT));
+        self.boost_recent_words_for_review();
     }
 
     fn copy_session_as_anki(&self, ctx: &egui::Context) {
@@ -155,7 +177,25 @@ impl App {
     }
 
     fn copy_deck_health_report(&self, ctx: &egui::Context) {
-        ctx.copy_text(format_deck_health_report(self.deck.words()));
+        ctx.copy_text(format_deck_health_report(
+            self.deck.words(),
+            self.source_kind,
+            self.deck.recent_cap(),
+            self.cfg.quiet_review_weighting,
+        ));
+    }
+
+    fn boost_recent_words_for_review(&mut self) {
+        let words: Vec<String> = self
+            .session_words
+            .iter()
+            .rev()
+            .take(RECENT_WORDS_LIMIT)
+            .map(|w| w.word.clone())
+            .collect();
+        for word in words {
+            self.deck.boost_word_for_review(&word);
+        }
     }
 
     fn reset_session(&mut self) {
@@ -188,6 +228,39 @@ impl App {
         }
     }
 
+    fn toggle_placement_preview(&mut self) {
+        self.cfg.placement_preview = !self.cfg.placement_preview;
+        if let Some(checks) = &self.menu_checks {
+            checks.preview.set_checked(self.cfg.placement_preview);
+        }
+    }
+
+    fn toggle_session_freeze(&mut self) {
+        self.session_frozen = !self.session_frozen;
+        self.cfg.session_frozen = self.session_frozen;
+        if let Some(checks) = &self.menu_checks {
+            checks.freeze.set_checked(self.session_frozen);
+        }
+        self.last_show = Instant::now();
+    }
+
+    fn toggle_preferences(&mut self, ctx: &egui::Context) {
+        self.show_preferences = !self.show_preferences;
+        self.cfg.preferences_open = self.show_preferences;
+        if let Some(checks) = &self.menu_checks {
+            checks.preferences.set_checked(self.show_preferences);
+        }
+        self.sync_mouse_passthrough(ctx);
+    }
+
+    fn sync_mouse_passthrough(&mut self, ctx: &egui::Context) {
+        let should_passthrough = !self.show_preferences;
+        if self.mouse_passthrough != should_passthrough {
+            ctx.send_viewport_cmd(egui::ViewportCommand::MousePassthrough(should_passthrough));
+            self.mouse_passthrough = should_passthrough;
+        }
+    }
+
     fn effective_card_opacity(&self) -> f32 {
         if self.cfg.high_contrast {
             self.cfg.card_opacity.max(HIGH_CONTRAST_MIN_OPACITY)
@@ -201,6 +274,16 @@ impl App {
             .get(&normalize_word_key(word))
             .copied()
             .unwrap_or(0)
+    }
+
+    fn focus_hours_active_at(&self, minute: u16) -> bool {
+        self.cfg.focus_hours.contains_minute(minute)
+    }
+
+    fn focus_hours_active(&self) -> bool {
+        current_local_minute()
+            .map(|minute| self.focus_hours_active_at(minute))
+            .unwrap_or(false)
     }
 
     // When the translation line starts fading in. Normally the configured
@@ -280,6 +363,89 @@ impl App {
             }
         });
     }
+
+    fn paint_preferences_window(&mut self, ctx: &egui::Context) {
+        if !self.show_preferences {
+            self.sync_mouse_passthrough(ctx);
+            return;
+        }
+
+        let mut open = self.show_preferences;
+        let old_interval_secs = self.cfg.interval_secs;
+        let old_jitter_secs = self.cfg.jitter_secs;
+        let old_recall = self.cfg.recall_mode;
+        let old_review_weighting = self.cfg.quiet_review_weighting;
+        let old_cooldown_words = self.cfg.cooldown_words;
+        let old_session_frozen = self.session_frozen;
+
+        egui::Window::new("Memo Words")
+            .collapsible(false)
+            .resizable(false)
+            .default_width(320.0)
+            .open(&mut open)
+            .show(ctx, |ui| {
+                let mut interval = self.cfg.interval_secs as u32;
+                ui.add(egui::Slider::new(&mut interval, 1..=3600).text("Interval"));
+                self.cfg.interval_secs = u64::from(interval);
+
+                let mut jitter = self.cfg.jitter_secs as u32;
+                ui.add(egui::Slider::new(&mut jitter, 0..=900).text("Jitter"));
+                self.cfg.jitter_secs = u64::from(jitter);
+
+                ui.add(egui::Slider::new(&mut self.cfg.card_opacity, 0.0..=1.0).text("Opacity"));
+                ui.add(egui::Slider::new(&mut self.cfg.corner_radius, 0.0..=64.0).text("Radius"));
+                ui.add(egui::Slider::new(&mut self.cfg.screen_margin, 0.0..=240.0).text("Margin"));
+
+                let mut cooldown = self.cfg.cooldown_words as u32;
+                ui.add(egui::Slider::new(&mut cooldown, 0..=300).text("Cooldown"));
+                self.cfg.cooldown_words = cooldown as usize;
+
+                ui.separator();
+                ui.checkbox(&mut self.cfg.recall_mode, "Recall mode");
+                ui.checkbox(&mut self.cfg.pace_indicator, "Pace indicator");
+                ui.checkbox(&mut self.cfg.session_counter, "Session counter");
+                ui.checkbox(&mut self.cfg.high_contrast, "High contrast");
+                ui.checkbox(&mut self.cfg.familiarity_dimming, "Familiarity dimming");
+                ui.checkbox(&mut self.cfg.quiet_review_weighting, "Review weighting");
+                ui.checkbox(&mut self.cfg.placement_preview, "Placement preview");
+                ui.checkbox(&mut self.session_frozen, "Freeze current word");
+            });
+
+        if !open {
+            self.show_preferences = false;
+            self.cfg.preferences_open = false;
+            if let Some(checks) = &self.menu_checks {
+                checks.preferences.set_checked(false);
+            }
+        }
+
+        if old_recall != self.cfg.recall_mode {
+            self.restart_current_word_timing();
+        }
+        if old_interval_secs != self.cfg.interval_secs || old_jitter_secs != self.cfg.jitter_secs {
+            self.restart_current_word_timing();
+        }
+        if old_review_weighting != self.cfg.quiet_review_weighting {
+            self.deck
+                .set_review_weighting(self.cfg.quiet_review_weighting);
+        }
+        if old_cooldown_words != self.cfg.cooldown_words {
+            self.deck.set_cooldown_words(self.cfg.cooldown_words);
+        }
+        if old_session_frozen != self.session_frozen {
+            self.last_show = Instant::now();
+        }
+
+        self.cfg.session_frozen = self.session_frozen;
+        if let Some(checks) = &self.menu_checks {
+            checks.recall.set_checked(self.cfg.recall_mode);
+            checks.pace.set_checked(self.cfg.pace_indicator);
+            checks.preview.set_checked(self.cfg.placement_preview);
+            checks.preferences.set_checked(self.show_preferences);
+            checks.freeze.set_checked(self.session_frozen);
+        }
+        self.sync_mouse_passthrough(ctx);
+    }
 }
 
 impl eframe::App for App {
@@ -300,6 +466,7 @@ impl eframe::App for App {
         if !self.started {
             self.started = true;
             self.fill_screen(&ctx);
+            self.sync_mouse_passthrough(&ctx);
             if !self.bench
                 && let Some(tx) = self.menu_tx.take()
             {
@@ -361,10 +528,19 @@ impl eframe::App for App {
                 self.toggle_recall_mode();
             } else if id == self.menu_ids.toggle_pace {
                 self.toggle_pace_indicator();
+            } else if id == self.menu_ids.toggle_preview {
+                self.toggle_placement_preview();
+            } else if id == self.menu_ids.toggle_preferences {
+                self.toggle_preferences(&ctx);
+            } else if id == self.menu_ids.toggle_freeze {
+                self.toggle_session_freeze();
             }
         }
 
-        if !self.paused && self.last_show.elapsed() >= self.word_interval {
+        let focus_paused = self.focus_hours_active();
+        let rotation_paused = self.paused || self.session_frozen || focus_paused;
+
+        if !rotation_paused && self.last_show.elapsed() >= self.word_interval {
             self.advance();
         }
 
@@ -412,6 +588,7 @@ impl eframe::App for App {
                     self.session_word_count(&w.word),
                     self.cfg.familiarity_dimming,
                 ),
+                show_placement_preview: self.cfg.placement_preview,
             };
             let widget_w = view.compute_width(ui);
             view.paint(ui, widget_w);
@@ -425,13 +602,21 @@ impl eframe::App for App {
         // sleep long while paused (a menu event wakes us), otherwise sleep until
         // the next word is due. A static card costs no frames.
         let anim_end = self.anim_end(has_example);
-        if elapsed < anim_end {
+        self.paint_preferences_window(&ctx);
+
+        if self.show_preferences {
+            ctx.request_repaint_after(Duration::from_millis(250));
+        } else if elapsed < anim_end {
             if self.bench {
                 self.active_repaints.fetch_add(1, Ordering::Relaxed);
             }
             ctx.request_repaint_after(ANIM_FRAME);
-        } else if self.paused {
-            ctx.request_repaint_after(Duration::from_secs(3600));
+        } else if rotation_paused {
+            if focus_paused {
+                ctx.request_repaint_after(Duration::from_secs(60));
+            } else {
+                ctx.request_repaint_after(Duration::from_secs(3600));
+            }
         } else {
             let until_next = self.word_interval.saturating_sub(self.last_show.elapsed());
             if self.cfg.pace_indicator && until_next > Duration::ZERO {
@@ -460,6 +645,83 @@ fn speak_word(word: &str) {
 
 #[cfg(not(target_os = "macos"))]
 fn speak_word(_word: &str) {}
+
+fn current_local_minute() -> Option<u16> {
+    let now = time::OffsetDateTime::now_local().ok()?;
+    Some(u16::from(now.hour()) * 60 + u16::from(now.minute()))
+}
+
+fn current_rollup_stamp() -> (String, String) {
+    let now = time::OffsetDateTime::now_local().unwrap_or_else(|_| time::OffsetDateTime::now_utc());
+    (
+        format!(
+            "{:04}-{:02}-{:02}",
+            now.year(),
+            u8::from(now.month()),
+            now.day()
+        ),
+        format!("{:02}:{:02}", now.hour(), now.minute()),
+    )
+}
+
+fn rollup_path() -> Option<PathBuf> {
+    if let Ok(path) = std::env::var("MEMO_ROLLUP") {
+        return Some(PathBuf::from(path));
+    }
+    let home = std::env::var("HOME").ok()?;
+    Some(PathBuf::from(home).join(".config/memo-words/daily-rollup.md"))
+}
+
+fn append_daily_rollup(w: &Word) {
+    let Some(path) = rollup_path() else {
+        return;
+    };
+    if let Some(parent) = path.parent()
+        && let Err(e) = std::fs::create_dir_all(parent)
+    {
+        eprintln!("Failed to create rollup directory: {e}");
+        return;
+    }
+
+    let (date, time) = current_rollup_stamp();
+    let header = format!("## {date}\n");
+    let mut text = String::new();
+    let existing = std::fs::read_to_string(&path).unwrap_or_default();
+    if existing.is_empty() {
+        text.push_str("# Memo Words daily rollup\n\n");
+        text.push_str(&header);
+    } else if !existing.contains(&header) {
+        if !existing.ends_with('\n') {
+            text.push('\n');
+        }
+        text.push('\n');
+        text.push_str(&header);
+    }
+    text.push_str(&format_rollup_line(w, &time));
+
+    use std::io::Write;
+    match std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&path)
+    {
+        Ok(mut file) => {
+            if let Err(e) = file.write_all(text.as_bytes()) {
+                eprintln!("Failed to write daily rollup: {e}");
+            }
+        }
+        Err(e) => eprintln!("Failed to open daily rollup: {e}"),
+    }
+}
+
+fn format_rollup_line(w: &Word, time: &str) -> String {
+    let mut line = format!("- {time} **{}** - {}", w.word.trim(), w.translation.trim());
+    if !w.example.trim().is_empty() {
+        line.push_str(&format!(" - {}", w.example.trim()));
+    }
+    line.push('\n');
+    line
+}
 
 fn format_word_clipboard_text(w: &Word) -> String {
     let mut lines = vec![
@@ -543,7 +805,12 @@ fn tsv_cell(value: &str) -> String {
         .replace('\t', " ")
 }
 
-fn format_deck_health_report(words: &[Word]) -> String {
+pub fn format_deck_health_report(
+    words: &[Word],
+    source_kind: WordSourceKind,
+    cooldown_words: usize,
+    quiet_review_weighting: bool,
+) -> String {
     let mut missing_transcription = 0;
     let mut missing_translation = 0;
     let mut missing_example = 0;
@@ -578,6 +845,12 @@ fn format_deck_health_report(words: &[Word]) -> String {
 
     let mut out = String::from("# Memo Words deck health\n\n");
     out.push_str(&format!("Words: {}\n", words.len()));
+    out.push_str(&format!("Source: {}\n", source_kind.label()));
+    out.push_str(&format!("Cooldown window: {cooldown_words}\n"));
+    out.push_str(&format!(
+        "Quiet review weighting: {}\n",
+        if quiet_review_weighting { "on" } else { "off" }
+    ));
 
     out.push_str("\n## Errors\n");
     if invalid_frequency == 0 && duplicates.is_empty() {
@@ -649,7 +922,12 @@ mod tests {
                 example: String::new(),
             })
             .collect();
-        let deck = Deck::new(words, Box::new(FrequencyWeighted));
+        let deck = Deck::with_options(
+            words,
+            Box::new(FrequencyWeighted),
+            cfg.cooldown_words,
+            cfg.quiet_review_weighting,
+        );
         let ids = MenuIds {
             next: muda::MenuId::from("next"),
             speak: muda::MenuId::from("speak"),
@@ -661,6 +939,9 @@ mod tests {
             reset_session: muda::MenuId::from("reset_session"),
             toggle_recall: muda::MenuId::from("toggle_recall"),
             toggle_pace: muda::MenuId::from("toggle_pace"),
+            toggle_preview: muda::MenuId::from("toggle_preview"),
+            toggle_preferences: muda::MenuId::from("toggle_preferences"),
+            toggle_freeze: muda::MenuId::from("toggle_freeze"),
             pause: muda::MenuId::from("pause"),
             quit: muda::MenuId::from("quit"),
         };
@@ -680,8 +961,29 @@ mod tests {
                 cfg.pace_indicator,
                 None,
             ),
+            preview: muda::CheckMenuItem::with_id(
+                "toggle_preview",
+                "Placement preview",
+                true,
+                cfg.placement_preview,
+                None,
+            ),
+            preferences: muda::CheckMenuItem::with_id(
+                "toggle_preferences",
+                "Preferences",
+                true,
+                cfg.preferences_open,
+                None,
+            ),
+            freeze: muda::CheckMenuItem::with_id(
+                "toggle_freeze",
+                "Freeze current word",
+                true,
+                cfg.session_frozen,
+                None,
+            ),
         };
-        App::new(deck, ids, Some(checks), cfg)
+        App::new(deck, ids, Some(checks), cfg, WordSourceKind::Bench)
     }
 
     #[test]
@@ -709,6 +1011,37 @@ mod tests {
         app.toggle_pace_indicator();
         assert!(!app.cfg.pace_indicator);
         assert!(!app.menu_checks.as_ref().unwrap().pace.is_checked());
+    }
+
+    #[test]
+    fn toggle_placement_preview_flips_config() {
+        let mut app = test_app(5, Config::default());
+        assert!(!app.cfg.placement_preview);
+        app.toggle_placement_preview();
+        assert!(app.cfg.placement_preview);
+        assert!(app.menu_checks.as_ref().unwrap().preview.is_checked());
+    }
+
+    #[test]
+    fn toggle_session_freeze_flips_state_and_restarts_timer() {
+        let mut app = test_app(5, Config::default());
+        app.last_show = Instant::now() - Duration::from_secs(20);
+
+        app.toggle_session_freeze();
+
+        assert!(app.session_frozen);
+        assert!(app.cfg.session_frozen);
+        assert!(app.menu_checks.as_ref().unwrap().freeze.is_checked());
+        assert!(app.last_show.elapsed() < Duration::from_secs(1));
+    }
+
+    #[test]
+    fn focus_hours_active_at_uses_configured_windows() {
+        let cfg = Config::default().merge_str("focus_hours = 09:00-17:00");
+        let app = test_app(5, cfg);
+
+        assert!(app.focus_hours_active_at(12 * 60));
+        assert!(!app.focus_hours_active_at(18 * 60));
     }
 
     #[test]
@@ -763,6 +1096,21 @@ mod tests {
         assert!(app.session_words.is_empty());
         assert_eq!(app.session_word_count("w0"), 0);
         assert!(app.session_started.elapsed() < Duration::from_secs(1));
+    }
+
+    #[test]
+    fn copy_current_word_marks_it_for_quiet_review() {
+        let cfg = Config {
+            quiet_review_weighting: true,
+            ..Config::default()
+        };
+        let mut app = test_app(1, cfg);
+        app.advance();
+        let ctx = egui::Context::default();
+
+        app.copy_current_word(&ctx);
+
+        assert!(app.deck.is_review_boosted("w0"));
     }
 
     #[test]
@@ -858,6 +1206,22 @@ mod tests {
     }
 
     #[test]
+    fn format_rollup_line_includes_example_when_present() {
+        let word = Word {
+            word: "time".into(),
+            transcription: "/taɪm/".into(),
+            translation: "time".into(),
+            frequency: 70,
+            example: "What time is it?".into(),
+        };
+
+        assert_eq!(
+            format_rollup_line(&word, "14:05"),
+            "- 14:05 **time** - time - What time is it?\n"
+        );
+    }
+
+    #[test]
     fn format_deck_health_report_counts_missing_fields_and_duplicates() {
         let words = vec![
             Word {
@@ -876,9 +1240,12 @@ mod tests {
             },
         ];
 
-        let report = format_deck_health_report(&words);
+        let report = format_deck_health_report(&words, WordSourceKind::Mongo, 12, true);
 
         assert!(report.contains("Words: 2"));
+        assert!(report.contains("Source: mongo"));
+        assert!(report.contains("Cooldown window: 12"));
+        assert!(report.contains("Quiet review weighting: on"));
         assert!(report.contains("Missing transcription: 1"));
         assert!(report.contains("Missing translation: 1"));
         assert!(report.contains("Missing example: 1"));
@@ -900,9 +1267,10 @@ mod tests {
             example: "What time is it?".into(),
         }];
 
-        let report = format_deck_health_report(&words);
+        let report = format_deck_health_report(&words, WordSourceKind::Fallback, 0, false);
 
         assert_eq!(report.matches("- None").count(), 3);
+        assert!(report.contains("Source: fallback"));
     }
 
     #[test]

@@ -81,6 +81,13 @@ no change.
 | `session_counter`     | `false`        | Draw a tiny count of words shown in the current session. |
 | `high_contrast`       | `false`        | Strengthen card material, border, and secondary text alphas. |
 | `familiarity_dimming` | `false`        | Slightly dim words already seen in the current session. |
+| `focus_hours`         | `off`          | Comma-separated local quiet windows like `09:00-17:00,22:00-01:00`; rotation pauses inside them. |
+| `daily_rollup`        | `false`        | Append shown words to a dated local Markdown rollup. |
+| `quiet_review_weighting` | `false`     | Gently boost copied/recently revisited words in future rotation. |
+| `placement_preview`   | `false`        | Draw temporary safe-area guides for corner/margin tuning. |
+| `preferences_open`    | `false`        | Open the small preferences window on launch. |
+| `session_frozen`      | `false`        | Start with the current word frozen while tray copy/export actions stay available. |
+| `cooldown_words`      | `0`            | Override the recent-word cooldown window; `0` keeps the automatic deck-sized window. |
 
 Example `config.conf`:
 
@@ -95,6 +102,10 @@ accent_color = mint
 session_counter = true
 high_contrast = true
 familiarity_dimming = true
+focus_hours = 09:00-17:00
+daily_rollup = true
+quiet_review_weighting = true
+cooldown_words = 25
 ```
 
 ## Tray menu
@@ -114,12 +125,23 @@ familiarity_dimming = true
   the current session; changing it restarts the current card's reveal.
 - **Pace indicator** - checked when the faint progress underline is visible for
   the current session.
+- **Placement preview** - checked when safe-area/corner guides are visible for
+  tuning layout.
+- **Preferences** - opens a small settings window and temporarily makes the
+  overlay clickable; closing it returns the overlay to click-through mode.
+- **Freeze current word** - stops automatic rotation on the visible word while
+  keeping copy/export/speak actions available.
 - **Paused** - checked when automatic word rotation is stopped.
 - **Quit** - exit the app.
 
 ## Environment variables
 
 - `MEMO_CONFIG` - path to a config file (overrides the default location).
+- `MEMO_ROLLUP` - path for `daily_rollup` output; defaults to
+  `$HOME/.config/memo-words/daily-rollup.md`.
+- `MEMO_DRY_RUN` - validate the loaded deck, print the Markdown health report,
+  and exit without opening the overlay. Equivalent CLI flags:
+  `--dry-run` or `--validate-deck`.
 - `MEMO_BENCH` - benchmark mode: shows one pinned card, counts rendered frames
   over a fixed idle window, prints `BENCH frames=N fps=N active_repaints=N` to
   stderr, and exits. `active_repaints` counts app-requested animation/progress

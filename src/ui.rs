@@ -319,6 +319,7 @@ pub struct CardView<'a> {
     pub high_contrast: bool,
     pub screen_margin: f32,
     pub familiarity_factor: f32,
+    pub show_placement_preview: bool,
 }
 
 impl<'a> CardView<'a> {
@@ -380,6 +381,10 @@ impl<'a> CardView<'a> {
 
         let widget_rect =
             egui::Rect::from_min_size(egui::pos2(x, y), egui::vec2(widget_w, WIDGET_HEIGHT));
+
+        if self.show_placement_preview {
+            self.paint_placement_preview(ui, screen, widget_rect, margin);
+        }
 
         ui.painter()
             .add(SHADOW.as_shape(widget_rect, self.corner_radius));
@@ -551,6 +556,56 @@ impl<'a> CardView<'a> {
             galley,
             accent_rgba(self.accent_color, if self.high_contrast { 136 } else { 88 }),
         );
+    }
+
+    fn paint_placement_preview(
+        &self,
+        ui: &mut egui::Ui,
+        screen: egui::Rect,
+        widget_rect: egui::Rect,
+        margin: f32,
+    ) {
+        let safe = screen.shrink(margin);
+        let guide = accent_rgba(self.accent_color, if self.high_contrast { 96 } else { 64 });
+        ui.painter().rect_stroke(
+            safe,
+            0.0,
+            egui::Stroke::new(1.0_f32, guide),
+            egui::StrokeKind::Inside,
+        );
+        ui.painter().rect_stroke(
+            widget_rect.expand(4.0),
+            self.corner_radius + 4.0,
+            egui::Stroke::new(1.0_f32, guide),
+            egui::StrokeKind::Outside,
+        );
+
+        let notch = 18.0;
+        for corner in [
+            safe.left_top(),
+            safe.right_top(),
+            safe.left_bottom(),
+            safe.right_bottom(),
+        ] {
+            let x_dir = if corner.x <= safe.center().x {
+                1.0
+            } else {
+                -1.0
+            };
+            let y_dir = if corner.y <= safe.center().y {
+                1.0
+            } else {
+                -1.0
+            };
+            ui.painter().line_segment(
+                [corner, egui::pos2(corner.x + notch * x_dir, corner.y)],
+                egui::Stroke::new(1.0_f32, guide),
+            );
+            ui.painter().line_segment(
+                [corner, egui::pos2(corner.x, corner.y + notch * y_dir)],
+                egui::Stroke::new(1.0_f32, guide),
+            );
+        }
     }
 }
 
