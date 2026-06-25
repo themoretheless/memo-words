@@ -196,8 +196,11 @@ mod tests {
 
     #[test]
     fn recap_always_reshows_an_earlier_word() {
-        // With chance 1.0 and a full window, once enough history exists every
-        // swap re-shows a word already in the recent set (a genuine recap).
+        // With chance 1.0 and a primed window, EVERY swap re-shows a word already
+        // in the recent set (a genuine recap), and the recapped word is never the
+        // one currently on display. Once recap starts firing the window stops
+        // growing (try_recap only reorders), so the pool stays >= 1 and all 30
+        // measured advances must recap, not merely "at least one".
         let mut d = deck(300).with_recap_chance(1.0);
         // Prime the window past RECAP_MIN_LAG so a recap pool exists.
         for _ in 0..20 {
@@ -205,13 +208,16 @@ mod tests {
         }
         let mut recaps = 0;
         for _ in 0..30 {
+            let prev = d.current.unwrap();
             let before: std::collections::HashSet<usize> = d.recent_set.clone();
             d.advance();
-            if before.contains(&d.current.unwrap()) {
+            let now = d.current.unwrap();
+            assert_ne!(now, prev, "recap must never re-show the current word");
+            if before.contains(&now) {
                 recaps += 1;
             }
         }
-        assert!(recaps > 0, "expected at least one recap with chance 1.0");
+        assert_eq!(recaps, 30, "every swap must recap at chance 1.0");
     }
 
     #[test]

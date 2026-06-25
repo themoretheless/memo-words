@@ -69,30 +69,48 @@ fn parse_hex_color(s: &str) -> Option<[u8; 3]> {
     Some([r, g, b])
 }
 
+/// Parse a finite f32, rejecting NaN and the infinities. A non-finite value would
+/// otherwise slip past the clamps and poison the field: `f32::clamp` returns NaN
+/// for a NaN input, and `inf.max(0.0)` stays infinite. A NaN opacity renders the
+/// card invisible, and an infinite delay makes `anim_end` infinite so the app
+/// would repaint at 60fps forever (the zero-idle invariant relies on a finite
+/// end). Dropping the value here keeps the field at its default instead.
+fn parse_finite_f32(s: &str) -> Option<f32> {
+    s.parse::<f32>().ok().filter(|v| v.is_finite())
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct Config {
     pub interval_secs: u64,
     pub jitter_secs: u64,
+    /// Seconds before the transcription line starts fading in. Floored at 0.0;
+    /// non-finite values are rejected.
     pub transcription_delay: f32,
+    /// Seconds before the translation line starts fading in. Floored at 0.0;
+    /// non-finite values are rejected. In recall mode the effective reveal is
+    /// pushed later (see `App::effective_translation_delay`).
     pub translation_delay: f32,
+    /// Seconds each line takes to fade in. Floored at 0.01; non-finite rejected.
     pub fade_duration: f32,
     pub corner: Corner,
     pub speak: bool,
     /// Card background opacity, 0.0 (invisible) to 1.0 (opaque).
     pub card_opacity: f32,
-    /// Card corner radius in points.
+    /// Card corner radius in points (0.0..=64.0). Past that the rounded
+    /// rectangle degrades against the fixed 160px card height.
     pub corner_radius: f32,
     /// Active-recall mode: hold the translation back until late in the word's
     /// display so there's a real window to recall the meaning first.
     pub recall_mode: bool,
-    /// Seconds the card takes to fade out before the next word. 0 = hard cut
-    /// (the original behaviour); a small value softens the swap.
+    /// Seconds the card takes to fade out before the next word (0.0..=10.0, and
+    /// further capped at runtime to half the interval). 0 = hard cut (the
+    /// original behaviour); a small value softens the swap.
     pub exit_duration: f32,
     /// Probability (0.0..=1.0) that a word swap re-shows an earlier word instead
     /// of a fresh one, for spaced review. 0 = off (always a fresh word).
     pub recap_chance: f32,
-    /// Points each line drifts up from as it fades in (a gentle entrance settle).
-    /// 0 = off (lines fade in place, the original behaviour).
+    /// Points each line drifts up from as it fades in (0.0..=16.0, a gentle
+    /// entrance settle). 0 = off (lines fade in place, the original behaviour).
     pub settle_px: f32,
     /// Optional accent colour (RGB) for a thin rule under the headword. None
     /// (the default) draws no rule, keeping the card monochrome.
@@ -155,21 +173,21 @@ impl Config {
                 }
                 "jitter_secs" => {
                     if let Ok(v) = value.parse::<u64>() {
-                        cfg.jitter_secs = v.min(MAX_SECS);
+                        cfg.jitter_secs = v.clamp(0, MAX_SECS);
                     }
                 }
                 "transcription_delay" => {
-                    if let Ok(v) = value.parse::<f32>() {
+                    if let Some(v) = parse_finite_f32(value) {
                         cfg.transcription_delay = v.max(0.0);
                     }
                 }
                 "translation_delay" => {
-                    if let Ok(v) = value.parse::<f32>() {
+                    if let Some(v) = parse_finite_f32(value) {
                         cfg.translation_delay = v.max(0.0);
                     }
                 }
                 "fade_duration" => {
-                    if let Ok(v) = value.parse::<f32>() {
+                    if let Some(v) = parse_finite_f32(value) {
                         cfg.fade_duration = v.max(0.01);
                     }
                 }
@@ -185,12 +203,12 @@ impl Config {
                     );
                 }
                 "card_opacity" => {
-                    if let Ok(v) = value.parse::<f32>() {
+                    if let Some(v) = parse_finite_f32(value) {
                         cfg.card_opacity = v.clamp(0.0, 1.0);
                     }
                 }
                 "corner_radius" => {
-                    if let Ok(v) = value.parse::<f32>() {
+                    if let Some(v) = parse_finite_f32(value) {
                         cfg.corner_radius = v.clamp(0.0, MAX_CORNER_RADIUS);
                     }
                 }
@@ -201,17 +219,17 @@ impl Config {
                     );
                 }
                 "exit_duration" => {
-                    if let Ok(v) = value.parse::<f32>() {
+                    if let Some(v) = parse_finite_f32(value) {
                         cfg.exit_duration = v.clamp(0.0, MAX_EXIT_DURATION);
                     }
                 }
                 "recap_chance" => {
-                    if let Ok(v) = value.parse::<f32>() {
+                    if let Some(v) = parse_finite_f32(value) {
                         cfg.recap_chance = v.clamp(0.0, 1.0);
                     }
                 }
                 "settle_px" => {
-                    if let Ok(v) = value.parse::<f32>() {
+                    if let Some(v) = parse_finite_f32(value) {
                         cfg.settle_px = v.clamp(0.0, MAX_SETTLE_PX);
                     }
                 }
@@ -221,7 +239,7 @@ impl Config {
                     }
                 }
                 "sheen" => {
-                    if let Ok(v) = value.parse::<f32>() {
+                    if let Some(v) = parse_finite_f32(value) {
                         cfg.sheen = v.clamp(0.0, 1.0);
                     }
                 }
@@ -293,6 +311,57 @@ mod tests {
             .merge_str("interval_secs = 10000000000000000000\njitter_secs = 10000000000000000000");
         assert_eq!(cfg.interval_secs, 86_400);
         assert_eq!(cfg.jitter_secs, 86_400);
+    }
+
+    #[test]
+    fn merge_str_rejects_non_finite_floats() {
+        // nan/inf must never reach a field. f32::clamp returns NaN for a NaN
+        // input (so a clamp arm would store NaN -> invisible card), and
+        // inf.max(0.0) stays infinite (so a max arm would store inf, making
+        // anim_end infinite and pinning the app at 60fps). Every float key must
+        // drop a non-finite value and keep its default. We assert the WHOLE
+        // config stays finite after each poisoned line, so a future field that
+        // forgets the guard is caught too.
+        let def = Config::default();
+        let float_keys = [
+            "transcription_delay",
+            "translation_delay",
+            "fade_duration",
+            "card_opacity",
+            "corner_radius",
+            "exit_duration",
+            "recap_chance",
+            "settle_px",
+            "sheen",
+        ];
+        for key in float_keys {
+            for bad in ["nan", "NaN", "inf", "-inf", "infinity"] {
+                let cfg = Config::default().merge_str(&format!("{key} = {bad}"));
+                assert!(cfg.transcription_delay.is_finite());
+                assert!(cfg.translation_delay.is_finite());
+                assert!(cfg.fade_duration.is_finite());
+                assert!(cfg.card_opacity.is_finite());
+                assert!(cfg.corner_radius.is_finite());
+                assert!(cfg.exit_duration.is_finite());
+                assert!(cfg.recap_chance.is_finite());
+                assert!(cfg.settle_px.is_finite());
+                assert!(cfg.sheen.is_finite());
+                // The poisoned key specifically must equal its default.
+                let same = match key {
+                    "transcription_delay" => cfg.transcription_delay == def.transcription_delay,
+                    "translation_delay" => cfg.translation_delay == def.translation_delay,
+                    "fade_duration" => cfg.fade_duration == def.fade_duration,
+                    "card_opacity" => cfg.card_opacity == def.card_opacity,
+                    "corner_radius" => cfg.corner_radius == def.corner_radius,
+                    "exit_duration" => cfg.exit_duration == def.exit_duration,
+                    "recap_chance" => cfg.recap_chance == def.recap_chance,
+                    "settle_px" => cfg.settle_px == def.settle_px,
+                    "sheen" => cfg.sheen == def.sheen,
+                    _ => unreachable!(),
+                };
+                assert!(same, "{key} = {bad} changed the field from its default");
+            }
+        }
     }
 
     #[test]
