@@ -116,6 +116,37 @@ pub fn exit_window(cfg: &Config, word_interval: Duration) -> Duration {
     Duration::from_secs_f32(cfg.exit_duration.min(cap).max(0.0))
 }
 
+// --- Repaint scheduling --------------------------------------------------
+
+/// While paused, the UI sleeps this long between repaints; a tray-menu event
+/// wakes it sooner, so the exact value only bounds how stale a paused card can be.
+const PAUSED_SLEEP: Duration = Duration::from_secs(3600);
+
+/// How long to sleep before the next repaint, decided purely by card state. This
+/// is the heart of the zero-idle invariant, so it lives here as a pure function
+/// testable without egui: animate at `anim_frame` cadence while a line is fading
+/// in (`elapsed < anim_end`) or during the exit fade (`until_next <= exit_window`);
+/// sleep long while paused; otherwise a settled card sleeps until the exit fade
+/// should begin (or the swap, if the fade is disabled), requesting NO frames.
+pub fn repaint_after(
+    elapsed: f32,
+    anim_end: f32,
+    paused: bool,
+    until_next: Duration,
+    exit_window: Duration,
+    anim_frame: Duration,
+) -> Duration {
+    if elapsed < anim_end {
+        anim_frame
+    } else if paused {
+        PAUSED_SLEEP
+    } else if until_next <= exit_window {
+        anim_frame
+    } else {
+        until_next.saturating_sub(exit_window)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -325,6 +356,87 @@ mod tests {
         assert_eq!(
             exit_window(&cfg, Duration::from_secs(4)),
             Duration::from_secs_f32(2.0)
+        );
+    }
+
+    const FRAME: Duration = Duration::from_millis(16);
+
+    #[test]
+    fn repaint_animates_while_fading_in() {
+        // elapsed before anim_end -> frame cadence, regardless of the rest.
+        assert_eq!(
+            repaint_after(
+                1.0,
+                11.0,
+                false,
+                Duration::from_secs(29),
+                Duration::ZERO,
+                FRAME
+            ),
+            FRAME
+        );
+    }
+
+    #[test]
+    fn repaint_is_idle_when_static() {
+        // The zero-idle invariant: a settled, unpaused card outside the exit
+        // window sleeps until the next word, NOT at frame cadence.
+        let until = Duration::from_secs(29);
+        let d = repaint_after(20.0, 11.0, false, until, Duration::ZERO, FRAME);
+        assert_eq!(d, until); // exit disabled -> sleep the whole remainder
+        assert!(d > FRAME, "a static card must not animate");
+    }
+
+    #[test]
+    fn repaint_sleeps_long_when_paused_and_settled() {
+        let d = repaint_after(
+            20.0,
+            11.0,
+            true,
+            Duration::from_secs(29),
+            Duration::ZERO,
+            FRAME,
+        );
+        assert!(d >= Duration::from_secs(3600), "paused card sleeps long");
+    }
+
+    #[test]
+    fn repaint_animates_inside_the_exit_window() {
+        // Settled, not paused, but within the exit fade window -> animate out.
+        let d = repaint_after(
+            20.0,
+            11.0,
+            false,
+            Duration::from_millis(300),
+            Duration::from_secs_f32(0.5),
+            FRAME,
+        );
+        assert_eq!(d, FRAME);
+    }
+
+    #[test]
+    fn repaint_sleeps_until_the_exit_fade_should_begin() {
+        // Settled with the exit fade enabled but not yet reached: sleep exactly
+        // until the fade window opens.
+        let until = Duration::from_secs(29);
+        let ew = Duration::from_secs_f32(0.5);
+        let d = repaint_after(20.0, 11.0, false, until, ew, FRAME);
+        assert_eq!(d, until.saturating_sub(ew));
+    }
+
+    #[test]
+    fn repaint_animation_takes_priority_over_pause() {
+        // While still fading in, frame cadence wins even if paused is set.
+        assert_eq!(
+            repaint_after(
+                1.0,
+                11.0,
+                true,
+                Duration::from_secs(29),
+                Duration::ZERO,
+                FRAME
+            ),
+            FRAME
         );
     }
 }
