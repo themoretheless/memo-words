@@ -238,21 +238,18 @@ impl eframe::App for App {
             self.prev_width = w;
         }
 
-        // Drive repaints by state: animate at ~60 fps while the card fades in or
-        // out, sleep long while paused (a menu event wakes us), otherwise sleep
-        // until the exit fade should begin. A static card costs no frames.
+        // Drive repaints by state (the zero-idle invariant: a settled card costs
+        // no frames). The decision is a pure function in `timing` so it can be
+        // tested without egui; here we just apply it.
         let anim_end = timing::anim_end(&self.cfg, has_example);
-        if elapsed < anim_end {
-            ctx.request_repaint_after(ANIM_FRAME);
-        } else if self.paused {
-            ctx.request_repaint_after(Duration::from_secs(3600));
-        } else if until_next <= exit_window {
-            // Inside the exit window: animate the fade-out until the swap.
-            ctx.request_repaint_after(ANIM_FRAME);
-        } else {
-            // Sleep until the exit fade should start (or the swap, if disabled).
-            ctx.request_repaint_after(until_next.saturating_sub(exit_window));
-        }
+        ctx.request_repaint_after(timing::repaint_after(
+            elapsed,
+            anim_end,
+            self.paused,
+            until_next,
+            exit_window,
+            ANIM_FRAME,
+        ));
     }
 }
 
