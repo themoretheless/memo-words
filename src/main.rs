@@ -1,15 +1,19 @@
 mod app;
 mod config;
-mod db;
 mod deck;
+mod fallback;
+mod model;
 mod selector;
+mod source;
+mod timing;
 mod tray;
 mod ui;
 
-use db::{MongoWordSource, StaticWordSource, WithFallback, Word, WordSource};
 use deck::Deck;
+use model::Word;
 use muda::{Menu, MenuItem};
 use selector::FrequencyWeighted;
+use source::{MongoWordSource, StaticWordSource, WithFallback, WordSource};
 use tray_icon::TrayIconBuilder;
 
 fn main() -> eframe::Result<()> {

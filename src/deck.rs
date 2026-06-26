@@ -1,4 +1,4 @@
-use crate::db::Word;
+use crate::model::Word;
 use crate::selector::WordSelector;
 use rand::RngExt;
 use rand::rng;
