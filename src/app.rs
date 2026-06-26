@@ -73,9 +73,13 @@ impl App {
     /// interval, and speak it if configured.
     fn advance(&mut self) {
         self.deck.advance();
+        // Roll the interval against the new word's frequency so rare-word dwell
+        // (if enabled) can stretch harder words. Unknown/absent rank reads as
+        // rarest, matching the selector's convention.
+        let frequency = self.deck.current().map(|w| w.frequency).unwrap_or(0);
         self.shown_at = Some(Instant::now());
         self.last_show = Instant::now();
-        self.word_interval = self.roll_interval();
+        self.word_interval = self.roll_interval(frequency);
 
         if self.cfg.speak
             && let Some(w) = self.deck.current()
@@ -135,10 +139,14 @@ impl App {
         Duration::from_secs_f32(self.cfg.exit_duration.min(cap).max(0.0))
     }
 
-    // Time the current word stays up: base interval optionally jittered by
-    // +/- jitter_secs so the cadence doesn't feel metronomic. Clamped to >=1s.
-    fn roll_interval(&self) -> Duration {
-        let base = self.cfg.interval_secs as i64;
+    // Time the current word stays up: the base interval, optionally stretched for
+    // rarer words (rare_word_dwell) so harder vocab lingers longer, then jittered
+    // by +/- jitter_secs so the cadence doesn't feel metronomic. Clamped to >=1s.
+    // The dwell multiplier applies to the base before jitter, so jitter stays a
+    // fixed +/- band around the (possibly stretched) interval.
+    fn roll_interval(&self, frequency: i32) -> Duration {
+        let mult = 1.0 + self.cfg.rare_word_dwell * difficulty_factor(frequency);
+        let base = (self.cfg.interval_secs as f64 * mult as f64).round() as i64;
         if self.cfg.jitter_secs == 0 {
             return Duration::from_secs(base.max(1) as u64);
         }
@@ -300,6 +308,18 @@ impl eframe::App for App {
     }
 }
 
+// How "rare" a word is on a 0.0..=1.0 scale from its frequency rank (1 = most
+// common). Rank 1 -> 0.0 (no extra dwell); rarer ranks rise toward 1.0. An
+// unknown/absent rank (<= 0, e.g. a MongoDB doc without the field) reads as
+// rarest (1.0), matching `selector::weight`'s convention.
+fn difficulty_factor(frequency: i32) -> f32 {
+    if frequency >= 1 {
+        1.0 - 1.0 / frequency as f32
+    } else {
+        1.0
+    }
+}
+
 // Pronounce the word out loud. Fire-and-forget so the UI thread never blocks
 // on the TTS process. macOS only (uses `say`); a no-op elsewhere.
 #[cfg(target_os = "macos")]
@@ -348,7 +368,7 @@ mod tests {
             ..Config::default()
         };
         let app = test_app(5, cfg);
-        assert_eq!(app.roll_interval(), Duration::from_secs(30));
+        assert_eq!(app.roll_interval(1), Duration::from_secs(30));
     }
 
     #[test]
@@ -360,7 +380,7 @@ mod tests {
         };
         let app = test_app(5, cfg);
         for _ in 0..1000 {
-            let s = app.roll_interval().as_secs();
+            let s = app.roll_interval(1).as_secs();
             assert!((25..=35).contains(&s), "interval {s} out of [25,35]");
         }
     }
@@ -374,8 +394,57 @@ mod tests {
         };
         let app = test_app(5, cfg);
         for _ in 0..1000 {
-            assert!(app.roll_interval() >= Duration::from_secs(1));
+            assert!(app.roll_interval(1) >= Duration::from_secs(1));
         }
+    }
+
+    #[test]
+    fn difficulty_factor_ranks_rarity() {
+        // Most common (rank 1) gets no dwell; rarer ranks rise toward 1.0;
+        // unknown/absent rank (0 or negative) reads as rarest.
+        assert_eq!(difficulty_factor(1), 0.0);
+        assert_eq!(difficulty_factor(2), 0.5);
+        assert_eq!(difficulty_factor(0), 1.0);
+        assert_eq!(difficulty_factor(-5), 1.0);
+        assert!(difficulty_factor(100) > difficulty_factor(2));
+        for f in [-3, 0, 1, 2, 10, 100, 1000] {
+            let v = difficulty_factor(f);
+            assert!((0.0..=1.0).contains(&v), "factor {v} out of [0,1] for {f}");
+        }
+    }
+
+    #[test]
+    fn rare_word_dwell_off_keeps_uniform_interval() {
+        // Default (0.0) means every word, common or rare, uses the base interval.
+        let cfg = Config {
+            interval_secs: 30,
+            jitter_secs: 0,
+            rare_word_dwell: 0.0,
+            ..Config::default()
+        };
+        let app = test_app(5, cfg);
+        assert_eq!(app.roll_interval(1), Duration::from_secs(30));
+        assert_eq!(app.roll_interval(1000), Duration::from_secs(30));
+        assert_eq!(app.roll_interval(0), Duration::from_secs(30));
+    }
+
+    #[test]
+    fn rare_word_dwell_stretches_rarer_words() {
+        // At full strength the base is multiplied by (1 + difficulty_factor):
+        // common rank 1 stays at base, rank 2 gets 1.5x, unknown (rarest) gets 2x.
+        let cfg = Config {
+            interval_secs: 30,
+            jitter_secs: 0,
+            rare_word_dwell: 1.0,
+            ..Config::default()
+        };
+        let app = test_app(5, cfg);
+        assert_eq!(app.roll_interval(1), Duration::from_secs(30)); // common: unchanged
+        assert_eq!(app.roll_interval(2), Duration::from_secs(45)); // 30 * 1.5
+        assert_eq!(app.roll_interval(0), Duration::from_secs(60)); // rarest: 30 * 2.0
+        // Monotone: rarer words never dwell less than commoner ones.
+        assert!(app.roll_interval(2) > app.roll_interval(1));
+        assert!(app.roll_interval(0) >= app.roll_interval(2));
     }
 
     #[test]

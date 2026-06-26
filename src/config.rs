@@ -118,6 +118,11 @@ pub struct Config {
     /// Strength (0.0..=1.0) of a faint top sheen, a faux-vibrancy highlight that
     /// makes the card read like a lit material. 0 = off (flat fill).
     pub sheen: f32,
+    /// Extra dwell for rarer words (0.0..=1.0). At strength `s` a word's display
+    /// interval is multiplied by up to `(1 + s)` as its frequency rank rises, so
+    /// harder words linger longer for more exposure while common words keep the
+    /// base interval. 0 = off (every word uses the same interval).
+    pub rare_word_dwell: f32,
 }
 
 impl Default for Config {
@@ -138,6 +143,7 @@ impl Default for Config {
             settle_px: 0.0,
             accent_color: None,
             sheen: 0.0,
+            rare_word_dwell: 0.0,
         }
     }
 }
@@ -243,6 +249,11 @@ impl Config {
                         cfg.sheen = v.clamp(0.0, 1.0);
                     }
                 }
+                "rare_word_dwell" => {
+                    if let Some(v) = parse_finite_f32(value) {
+                        cfg.rare_word_dwell = v.clamp(0.0, 1.0);
+                    }
+                }
                 _ => {}
             }
         }
@@ -333,6 +344,7 @@ mod tests {
             "recap_chance",
             "settle_px",
             "sheen",
+            "rare_word_dwell",
         ];
         for key in float_keys {
             for bad in ["nan", "NaN", "inf", "-inf", "infinity"] {
@@ -346,6 +358,7 @@ mod tests {
                 assert!(cfg.recap_chance.is_finite());
                 assert!(cfg.settle_px.is_finite());
                 assert!(cfg.sheen.is_finite());
+                assert!(cfg.rare_word_dwell.is_finite());
                 // The poisoned key specifically must equal its default.
                 let same = match key {
                     "transcription_delay" => cfg.transcription_delay == def.transcription_delay,
@@ -357,6 +370,7 @@ mod tests {
                     "recap_chance" => cfg.recap_chance == def.recap_chance,
                     "settle_px" => cfg.settle_px == def.settle_px,
                     "sheen" => cfg.sheen == def.sheen,
+                    "rare_word_dwell" => cfg.rare_word_dwell == def.rare_word_dwell,
                     _ => unreachable!(),
                 };
                 assert!(same, "{key} = {bad} changed the field from its default");
@@ -396,6 +410,30 @@ mod tests {
         assert_eq!(Config::default().merge_str("sheen = 0.5").sheen, 0.5);
         assert_eq!(Config::default().merge_str("sheen = 9").sheen, 1.0);
         assert_eq!(Config::default().merge_str("sheen = -2").sheen, 0.0);
+    }
+
+    #[test]
+    fn merge_str_parses_and_clamps_rare_word_dwell() {
+        assert_eq!(Config::default().rare_word_dwell, 0.0); // off by default
+        assert_eq!(
+            Config::default()
+                .merge_str("rare_word_dwell = 0.5")
+                .rare_word_dwell,
+            0.5
+        );
+        // Out-of-range clamps into 0.0..=1.0.
+        assert_eq!(
+            Config::default()
+                .merge_str("rare_word_dwell = 3")
+                .rare_word_dwell,
+            1.0
+        );
+        assert_eq!(
+            Config::default()
+                .merge_str("rare_word_dwell = -1")
+                .rare_word_dwell,
+            0.0
+        );
     }
 
     #[test]

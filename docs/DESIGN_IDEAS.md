@@ -46,6 +46,11 @@ calm-ambient identity (heavy motion, chrome, interactivity) are downranked.
   gradient pooled at the top of the card so it reads like a lit material. Off by
   default, inset within the rounded corners and confined to the top, drawn as a
   4-vertex mesh over the fill, dimmed by the exit fade. (macOS NSVisualEffectView)
+- **Rare-word dwell** - `rare_word_dwell` (0..1) stretches the display interval of
+  less common words (by up to 1+strength as the frequency rank rises) so harder
+  vocab lingers longer for more exposure, while common words keep the base
+  interval. Off by default, pure interval math in `app.rs`, no persistence. First
+  round-3 ship-now item landed. (Duolingo adaptive spacing; round 3 #4)
 
 ## Top 10 (round 2)
 
