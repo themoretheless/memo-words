@@ -1,4 +1,4 @@
-use crate::db::Word;
+use crate::model::Word;
 use rand::rng;
 use rand::seq::IndexedRandom;
 

@@ -1,5 +1,6 @@
 use crate::config::Config;
 use crate::deck::Deck;
+use crate::timing;
 use crate::ui::{self, CardView};
 use eframe::egui;
 use muda::MenuEvent;
@@ -16,12 +17,6 @@ const ANIM_FRAME: Duration = Duration::from_millis(16);
 
 // Idle window measured by the frame-counter benchmark (MEMO_BENCH=1).
 const BENCH_SECS: u64 = 10;
-
-// In recall mode the translation is held back to this fraction of the interval
-// (capped below by the configured translation_delay) so there's a real window
-// to recall the meaning before it's revealed. 0.55 lands the reveal just past
-// the midpoint, leaving roughly the same span again to absorb the answer.
-const RECALL_REVEAL_FRACTION: f32 = 0.55;
 
 #[derive(Clone)]
 pub struct MenuIds {
@@ -88,65 +83,13 @@ impl App {
         }
     }
 
-    // When the translation line starts fading in. Normally the configured
-    // translation_delay; in recall mode it's pushed back to RECALL_REVEAL_FRACTION
-    // of the interval so the meaning stays hidden long enough to recall it first.
-    // Capped below by translation_delay, so enabling recall mode only ever delays
-    // the reveal, never pulls it earlier than the configured value.
-    fn effective_translation_delay(&self) -> f32 {
-        if self.cfg.recall_mode {
-            let late = self.cfg.interval_secs as f32 * RECALL_REVEAL_FRACTION;
-            late.max(self.cfg.translation_delay)
-        } else {
-            self.cfg.translation_delay
-        }
-    }
-
-    // When the example line starts fading in: just after the translation has
-    // settled, so the lines reveal in sequence (word, transcription,
-    // translation, example). Follows the effective translation delay, so recall
-    // mode pushes the example back in lockstep with the meaning.
-    fn example_delay(&self) -> f32 {
-        self.effective_translation_delay() + self.cfg.fade_duration
-    }
-
-    // Elapsed time (seconds since the word appeared) at which the card is fully
-    // settled and repaints can stop. The lines fade in at independent delays,
-    // so the card isn't done until the LAST one finishes. Using only
-    // translation_delay here meant a transcription_delay past the translation
-    // fade window stopped repaints before the transcription ever rendered,
-    // hiding it entirely. The example delay only counts when the current word
-    // actually has one, so example-less words don't repaint longer for nothing.
-    fn anim_end(&self, has_example: bool) -> f32 {
-        let mut last = self
-            .cfg
-            .transcription_delay
-            .max(self.effective_translation_delay());
-        if has_example {
-            last = last.max(self.example_delay());
-        }
-        last + self.cfg.fade_duration
-    }
-
-    // How long the card spends fading out before the next word. Zero (the
-    // default) means a hard cut. Capped at half the current interval so the fade
-    // never eats the whole word, however large exit_duration is configured.
-    fn exit_window(&self) -> Duration {
-        if self.cfg.exit_duration <= 0.0 {
-            return Duration::ZERO;
-        }
-        let cap = self.word_interval.as_secs_f32() * 0.5;
-        Duration::from_secs_f32(self.cfg.exit_duration.min(cap).max(0.0))
-    }
-
-    // Time the current word stays up: the base interval, optionally stretched for
-    // rarer words (rare_word_dwell) so harder vocab lingers longer, then jittered
-    // by +/- jitter_secs so the cadence doesn't feel metronomic. Clamped to >=1s.
-    // The dwell multiplier applies to the base before jitter, so jitter stays a
-    // fixed +/- band around the (possibly stretched) interval.
+    // Time the current word stays up: the pure base interval from `timing`
+    // (optionally stretched for rarer words), then jittered by +/- jitter_secs
+    // here so the cadence doesn't feel metronomic. The jitter lives in `App`
+    // because it needs an RNG; the deterministic part stays pure and tested in
+    // `timing`. Clamped to >=1s.
     fn roll_interval(&self, frequency: i32) -> Duration {
-        let mult = 1.0 + self.cfg.rare_word_dwell * difficulty_factor(frequency);
-        let base = (self.cfg.interval_secs as f64 * mult as f64).round() as i64;
+        let base = timing::dwelled_base_secs(&self.cfg, frequency);
         if self.cfg.jitter_secs == 0 {
             return Duration::from_secs(base.max(1) as u64);
         }
@@ -247,9 +190,9 @@ impl eframe::App for App {
 
         // Seconds until the next word, and the whole-card opacity for the exit
         // fade as the swap approaches (1.0 = fully shown, no fade by default).
-        let exit_window = self.exit_window();
+        let exit_window = timing::exit_window(&self.cfg, self.word_interval);
         let until_next = self.word_interval.saturating_sub(self.last_show.elapsed());
-        let exit_alpha = crate::ui::exit_alpha(until_next.as_secs_f32(), exit_window.as_secs_f32());
+        let exit_alpha = timing::exit_alpha(until_next.as_secs_f32(), exit_window.as_secs_f32());
         let accent = self
             .cfg
             .accent_color
@@ -259,8 +202,8 @@ impl eframe::App for App {
         // write until that borrow ends.
         let mut new_prev_width = None;
         let mut has_example = false;
-        let translation_delay = self.effective_translation_delay();
-        let example_delay = self.example_delay();
+        let translation_delay = timing::effective_translation_delay(&self.cfg);
+        let example_delay = timing::example_delay(&self.cfg);
         if let Some(w) = self.deck.current() {
             has_example = !w.example.trim().is_empty();
             let view = CardView {
@@ -293,7 +236,7 @@ impl eframe::App for App {
         // Drive repaints by state: animate at ~60 fps while the card fades in or
         // out, sleep long while paused (a menu event wakes us), otherwise sleep
         // until the exit fade should begin. A static card costs no frames.
-        let anim_end = self.anim_end(has_example);
+        let anim_end = timing::anim_end(&self.cfg, has_example);
         if elapsed < anim_end {
             ctx.request_repaint_after(ANIM_FRAME);
         } else if self.paused {
@@ -305,18 +248,6 @@ impl eframe::App for App {
             // Sleep until the exit fade should start (or the swap, if disabled).
             ctx.request_repaint_after(until_next.saturating_sub(exit_window));
         }
-    }
-}
-
-// How "rare" a word is on a 0.0..=1.0 scale from its frequency rank (1 = most
-// common). Rank 1 -> 0.0 (no extra dwell); rarer ranks rise toward 1.0. An
-// unknown/absent rank (<= 0, e.g. a MongoDB doc without the field) reads as
-// rarest (1.0), matching `selector::weight`'s convention.
-fn difficulty_factor(frequency: i32) -> f32 {
-    if frequency >= 1 {
-        1.0 - 1.0 / frequency as f32
-    } else {
-        1.0
     }
 }
 
@@ -338,7 +269,7 @@ fn speak_word(_word: &str) {}
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::db::Word;
+    use crate::model::Word;
     use crate::selector::FrequencyWeighted;
 
     fn test_app(n: usize, cfg: Config) -> App {
@@ -396,190 +327,5 @@ mod tests {
         for _ in 0..1000 {
             assert!(app.roll_interval(1) >= Duration::from_secs(1));
         }
-    }
-
-    #[test]
-    fn difficulty_factor_ranks_rarity() {
-        // Most common (rank 1) gets no dwell; rarer ranks rise toward 1.0;
-        // unknown/absent rank (0 or negative) reads as rarest.
-        assert_eq!(difficulty_factor(1), 0.0);
-        assert_eq!(difficulty_factor(2), 0.5);
-        assert_eq!(difficulty_factor(0), 1.0);
-        assert_eq!(difficulty_factor(-5), 1.0);
-        assert!(difficulty_factor(100) > difficulty_factor(2));
-        for f in [-3, 0, 1, 2, 10, 100, 1000] {
-            let v = difficulty_factor(f);
-            assert!((0.0..=1.0).contains(&v), "factor {v} out of [0,1] for {f}");
-        }
-    }
-
-    #[test]
-    fn rare_word_dwell_off_keeps_uniform_interval() {
-        // Default (0.0) means every word, common or rare, uses the base interval.
-        let cfg = Config {
-            interval_secs: 30,
-            jitter_secs: 0,
-            rare_word_dwell: 0.0,
-            ..Config::default()
-        };
-        let app = test_app(5, cfg);
-        assert_eq!(app.roll_interval(1), Duration::from_secs(30));
-        assert_eq!(app.roll_interval(1000), Duration::from_secs(30));
-        assert_eq!(app.roll_interval(0), Duration::from_secs(30));
-    }
-
-    #[test]
-    fn rare_word_dwell_stretches_rarer_words() {
-        // At full strength the base is multiplied by (1 + difficulty_factor):
-        // common rank 1 stays at base, rank 2 gets 1.5x, unknown (rarest) gets 2x.
-        let cfg = Config {
-            interval_secs: 30,
-            jitter_secs: 0,
-            rare_word_dwell: 1.0,
-            ..Config::default()
-        };
-        let app = test_app(5, cfg);
-        assert_eq!(app.roll_interval(1), Duration::from_secs(30)); // common: unchanged
-        assert_eq!(app.roll_interval(2), Duration::from_secs(45)); // 30 * 1.5
-        assert_eq!(app.roll_interval(0), Duration::from_secs(60)); // rarest: 30 * 2.0
-        // Monotone: rarer words never dwell less than commoner ones.
-        assert!(app.roll_interval(2) > app.roll_interval(1));
-        assert!(app.roll_interval(0) >= app.roll_interval(2));
-    }
-
-    #[test]
-    fn anim_end_uses_the_later_fade() {
-        let cfg = Config {
-            transcription_delay: 5.0,
-            translation_delay: 10.0,
-            fade_duration: 1.0,
-            ..Config::default()
-        };
-        let app = test_app(5, cfg);
-        assert_eq!(app.anim_end(false), 11.0);
-    }
-
-    #[test]
-    fn anim_end_covers_a_late_transcription_fade() {
-        // transcription_delay past the translation fade window must still be
-        // covered, otherwise the transcription line never gets painted.
-        let cfg = Config {
-            transcription_delay: 15.0,
-            translation_delay: 10.0,
-            fade_duration: 1.0,
-            ..Config::default()
-        };
-        let app = test_app(5, cfg);
-        assert_eq!(app.anim_end(false), 16.0);
-    }
-
-    #[test]
-    fn anim_end_extends_for_the_example_line() {
-        // With an example present, repaints must run until its fade (which
-        // starts after the translation settles) finishes.
-        let cfg = Config {
-            transcription_delay: 5.0,
-            translation_delay: 10.0,
-            fade_duration: 1.0,
-            ..Config::default()
-        };
-        let app = test_app(5, cfg);
-        // example_delay = 10 + 1 = 11; end = 11 + 1 = 12.
-        assert_eq!(app.anim_end(true), 12.0);
-        // Without an example the end is unchanged.
-        assert_eq!(app.anim_end(false), 11.0);
-    }
-
-    #[test]
-    fn effective_translation_delay_unchanged_without_recall() {
-        let cfg = Config {
-            translation_delay: 10.0,
-            interval_secs: 30,
-            recall_mode: false,
-            ..Config::default()
-        };
-        let app = test_app(5, cfg);
-        assert_eq!(app.effective_translation_delay(), 10.0);
-    }
-
-    #[test]
-    fn recall_mode_delays_translation_to_late_in_interval() {
-        let cfg = Config {
-            translation_delay: 10.0,
-            interval_secs: 30,
-            recall_mode: true,
-            ..Config::default()
-        };
-        let app = test_app(5, cfg);
-        // 30 * 0.55 = 16.5, later than the 10s default, so the late reveal wins.
-        assert_eq!(app.effective_translation_delay(), 16.5);
-    }
-
-    #[test]
-    fn recall_mode_never_earlier_than_configured_delay() {
-        // Short interval: 8 * 0.55 = 4.4, earlier than the 10s translation_delay.
-        // Recall mode must not pull the reveal in ahead of the configured value.
-        let cfg = Config {
-            translation_delay: 10.0,
-            interval_secs: 8,
-            recall_mode: true,
-            ..Config::default()
-        };
-        let app = test_app(5, cfg);
-        assert_eq!(app.effective_translation_delay(), 10.0);
-    }
-
-    #[test]
-    fn recall_mode_pushes_example_and_anim_end() {
-        let cfg = Config {
-            transcription_delay: 5.0,
-            translation_delay: 10.0,
-            fade_duration: 1.0,
-            interval_secs: 30,
-            recall_mode: true,
-            ..Config::default()
-        };
-        let app = test_app(5, cfg);
-        // translation at 16.5, example at 17.5, repaints end at 18.5.
-        assert_eq!(app.effective_translation_delay(), 16.5);
-        assert_eq!(app.example_delay(), 17.5);
-        assert_eq!(app.anim_end(true), 18.5);
-    }
-
-    #[test]
-    fn exit_window_is_zero_when_disabled() {
-        let cfg = Config {
-            exit_duration: 0.0,
-            interval_secs: 30,
-            ..Config::default()
-        };
-        let app = test_app(5, cfg);
-        assert_eq!(app.exit_window(), Duration::ZERO);
-    }
-
-    #[test]
-    fn exit_window_used_as_is_when_it_fits() {
-        // 0.4s fits well within half of a 30s interval, so it's used unchanged.
-        let cfg = Config {
-            exit_duration: 0.4,
-            interval_secs: 30,
-            jitter_secs: 0,
-            ..Config::default()
-        };
-        let app = test_app(5, cfg);
-        assert_eq!(app.exit_window(), Duration::from_secs_f32(0.4));
-    }
-
-    #[test]
-    fn exit_window_capped_at_half_a_short_interval() {
-        // A 5s exit on a 4s interval would eat the whole word; cap at half = 2s.
-        let cfg = Config {
-            exit_duration: 5.0,
-            interval_secs: 4,
-            jitter_secs: 0,
-            ..Config::default()
-        };
-        let app = test_app(5, cfg);
-        assert_eq!(app.exit_window(), Duration::from_secs_f32(2.0));
     }
 }

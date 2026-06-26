@@ -1,4 +1,5 @@
 use crate::config::Corner;
+use crate::timing::{fade_factor, settle_offset, smoothstep};
 use eframe::egui;
 use std::sync::Arc;
 
@@ -116,34 +117,6 @@ pub fn load_fonts(ctx: &egui::Context) {
             .push("arial_unicode".into());
     }
     ctx.set_fonts(fonts);
-}
-
-pub fn smoothstep(t: f32) -> f32 {
-    let t = t.clamp(0.0, 1.0);
-    t * t * (3.0 - 2.0 * t)
-}
-
-pub fn fade_factor(elapsed: f32, delay: f32, fade_duration: f32) -> f32 {
-    smoothstep((elapsed - delay) / fade_duration)
-}
-
-/// Whole-card opacity multiplier (1..0) for the exit fade. `until_next` is the
-/// seconds left before the next word; once it drops below `exit_duration` the
-/// card eases out, reaching 0 exactly at the swap, so the word leaves softly
-/// instead of hard-cutting. With `exit_duration <= 0` the card never fades.
-pub fn exit_alpha(until_next: f32, exit_duration: f32) -> f32 {
-    if exit_duration <= 0.0 || until_next >= exit_duration {
-        return 1.0;
-    }
-    let progress = 1.0 - (until_next.max(0.0) / exit_duration);
-    1.0 - smoothstep(progress)
-}
-
-/// Vertical entrance offset for a line at fade progress `ease`. The line starts
-/// `settle_px` points low and rises to rest (offset 0) as it fades in, so it
-/// drifts up into place. `settle_px == 0` is always 0, i.e. the entrance is off.
-pub fn settle_offset(settle_px: f32, ease: f32) -> f32 {
-    settle_px * (1.0 - ease.clamp(0.0, 1.0))
 }
 
 /// Scale a colour's overall opacity by `factor` (0..1). Works on any `Color32`
@@ -492,29 +465,6 @@ mod tests {
     }
 
     #[test]
-    fn smoothstep_clamps_and_eases() {
-        assert_eq!(smoothstep(-1.0), 0.0);
-        assert_eq!(smoothstep(0.0), 0.0);
-        assert_eq!(smoothstep(1.0), 1.0);
-        assert_eq!(smoothstep(2.0), 1.0);
-        // Symmetric ease passes through 0.5 at the midpoint.
-        assert!((smoothstep(0.5) - 0.5).abs() < 1e-6);
-        // Monotonic.
-        assert!(smoothstep(0.25) < smoothstep(0.75));
-    }
-
-    #[test]
-    fn fade_factor_is_zero_before_delay_and_one_after() {
-        let (delay, fade) = (5.0, 1.0);
-        assert_eq!(fade_factor(0.0, delay, fade), 0.0);
-        assert_eq!(fade_factor(delay, delay, fade), 0.0);
-        assert_eq!(fade_factor(delay + fade, delay, fade), 1.0);
-        assert_eq!(fade_factor(delay + 10.0, delay, fade), 1.0);
-        // Halfway through the fade window is mid-ease.
-        assert!((fade_factor(delay + 0.5 * fade, delay, fade) - 0.5).abs() < 1e-6);
-    }
-
-    #[test]
     fn truncate_example_leaves_short_text_untouched() {
         assert_eq!(truncate_example("Have a nice day!", 64), "Have a nice day!");
         assert_eq!(truncate_example("", 64), "");
@@ -552,40 +502,6 @@ mod tests {
         // A brighter intensity is more opaque than a dimmer one at equal ease,
         // so perceived brightness tracks the single intensity number.
         assert!(faded_line(215, 1.0).a() > faded_line(120, 1.0).a());
-    }
-
-    #[test]
-    fn exit_alpha_off_and_before_window_is_full() {
-        // Disabled (duration 0) stays fully visible regardless of time left.
-        assert_eq!(exit_alpha(5.0, 0.0), 1.0);
-        assert_eq!(exit_alpha(0.0, 0.0), 1.0);
-        // Outside the window (more time left than the fade) is fully visible.
-        assert_eq!(exit_alpha(2.0, 0.5), 1.0);
-        assert_eq!(exit_alpha(0.5, 0.5), 1.0); // exactly at the window edge
-    }
-
-    #[test]
-    fn exit_alpha_eases_to_zero_at_the_swap() {
-        let dur = 0.5;
-        // Midpoint of the window: 1 - smoothstep(0.5) = 0.5.
-        assert!((exit_alpha(0.25, dur) - 0.5).abs() < 1e-6);
-        // At the swap the card is fully faded out.
-        assert_eq!(exit_alpha(0.0, dur), 0.0);
-        // Monotone: less time left means more faded (lower alpha).
-        assert!(exit_alpha(0.1, dur) < exit_alpha(0.4, dur));
-    }
-
-    #[test]
-    fn settle_offset_drifts_from_full_to_zero() {
-        // Off: always flat regardless of progress.
-        assert_eq!(settle_offset(0.0, 0.0), 0.0);
-        assert_eq!(settle_offset(0.0, 0.5), 0.0);
-        // Enabled: starts a full settle_px low, rests at 0 once faded in.
-        assert_eq!(settle_offset(6.0, 0.0), 6.0);
-        assert_eq!(settle_offset(6.0, 1.0), 0.0);
-        assert!((settle_offset(6.0, 0.5) - 3.0).abs() < 1e-6);
-        // Monotone: more fade progress means less remaining offset.
-        assert!(settle_offset(6.0, 0.75) < settle_offset(6.0, 0.25));
     }
 
     #[test]
