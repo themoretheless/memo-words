@@ -127,8 +127,9 @@ cooldown_words = 25
   the current session.
 - **Placement preview** - checked when safe-area/corner guides are visible for
   tuning layout.
-- **Preferences** - opens a small settings window and temporarily makes the
-  overlay clickable; closing it returns the overlay to click-through mode.
+- **Preferences** - opens a grouped settings window with timing, layout,
+  accent, and learning controls; closing it returns the overlay to
+  click-through mode.
 - **Freeze current word** - stops automatic rotation on the visible word while
   keeping copy/export/speak actions available.
 - **Paused** - checked when automatic word rotation is stopped.

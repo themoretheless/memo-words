@@ -8,7 +8,7 @@ mod ui;
 
 use db::{MongoWordSource, StaticWordSource, Word, WordSource, WordSourceKind, fallback_words};
 use deck::Deck;
-use muda::{CheckMenuItem, Menu, MenuId, MenuItem};
+use muda::{CheckMenuItem, Menu, MenuId, MenuItem, PredefinedMenuItem};
 use selector::FrequencyWeighted;
 use tray_icon::TrayIconBuilder;
 
@@ -135,18 +135,22 @@ fn main() -> eframe::Result<()> {
         };
         menu.append(&next_item).unwrap();
         menu.append(&speak_item).unwrap();
+        menu.append(&PredefinedMenuItem::separator()).unwrap();
         menu.append(&copy_item).unwrap();
         menu.append(&recent_item).unwrap();
         menu.append(&summary_item).unwrap();
         menu.append(&anki_item).unwrap();
         menu.append(&health_item).unwrap();
+        menu.append(&PredefinedMenuItem::separator()).unwrap();
         menu.append(&reset_item).unwrap();
+        menu.append(&freeze_item).unwrap();
+        menu.append(&pause_item).unwrap();
+        menu.append(&PredefinedMenuItem::separator()).unwrap();
         menu.append(&recall_item).unwrap();
         menu.append(&pace_item).unwrap();
         menu.append(&preview_item).unwrap();
         menu.append(&preferences_item).unwrap();
-        menu.append(&freeze_item).unwrap();
-        menu.append(&pause_item).unwrap();
+        menu.append(&PredefinedMenuItem::separator()).unwrap();
         menu.append(&quit_item).unwrap();
         (menu_ids, Some(menu_checks), Some(menu))
     };

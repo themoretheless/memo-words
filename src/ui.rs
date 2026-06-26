@@ -56,7 +56,15 @@ pub const WIDTH_TRANSITION: f32 = 0.5;
 pub fn setup_visuals(ctx: &egui::Context) {
     let mut visuals = egui::Visuals::dark();
     visuals.panel_fill = egui::Color32::TRANSPARENT;
-    visuals.window_fill = egui::Color32::TRANSPARENT;
+    visuals.window_fill = egui::Color32::from_rgba_unmultiplied(22, 24, 27, 244);
+    visuals.window_stroke = egui::Stroke::new(
+        1.0_f32,
+        egui::Color32::from_rgba_unmultiplied(255, 255, 255, 28),
+    );
+    visuals.window_corner_radius = egui::CornerRadius::same(8);
+    visuals.extreme_bg_color = egui::Color32::from_rgba_unmultiplied(12, 14, 16, 255);
+    visuals.faint_bg_color = egui::Color32::from_rgba_unmultiplied(255, 255, 255, 10);
+    visuals.selection.bg_fill = egui::Color32::from_rgba_unmultiplied(127, 209, 174, 54);
     ctx.set_visuals(visuals);
 }
 

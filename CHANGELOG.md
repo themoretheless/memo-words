@@ -23,6 +23,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `placement_preview`, `preferences_open`, `session_frozen`, and
   `cooldown_words` config keys for respectful quiet windows, reviewable logs,
   placement tuning, runtime preferences, freezing, and smarter rotation.
+- Preferences window UI with grouped timing, layout, accent swatch, and learning
+  controls.
 - Tray actions for speaking/copying the current word, copying a Markdown
   recent-words list, copying a Markdown session summary, copying an Anki-ready
   TSV export, copying a deck health report, toggling recall mode, and toggling
@@ -51,6 +53,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   weighting state.
 - Custom accent hex values are guarded against overly dim or bright choices so
   highlights stay visible but calm.
+- Tray menu is grouped with separators, and the preferences window now uses a
+  readable dark material instead of transparent window fill.
 
 ## [0.2.0]
 

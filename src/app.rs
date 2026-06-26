@@ -1,4 +1,4 @@
-use crate::config::Config;
+use crate::config::{Config, Corner, DEFAULT_ACCENT_COLOR, Rgb};
 use crate::db::{Word, WordSourceKind};
 use crate::deck::Deck;
 use crate::ui::{self, CardView};
@@ -27,6 +27,33 @@ const BENCH_SECS: u64 = 10;
 const RECALL_REVEAL_FRACTION: f32 = 0.55;
 const HIGH_CONTRAST_MIN_OPACITY: f32 = 0.62;
 const RECENT_WORDS_LIMIT: usize = 5;
+const ACCENT_SWATCHES: [(&str, Rgb); 4] = [
+    ("Plain", DEFAULT_ACCENT_COLOR),
+    (
+        "Mint",
+        Rgb {
+            r: 127,
+            g: 209,
+            b: 174,
+        },
+    ),
+    (
+        "Sky",
+        Rgb {
+            r: 120,
+            g: 178,
+            b: 255,
+        },
+    ),
+    (
+        "Rose",
+        Rgb {
+            r: 244,
+            g: 143,
+            b: 177,
+        },
+    ),
+];
 
 #[derive(Clone)]
 pub struct MenuIds {
@@ -381,34 +408,118 @@ impl App {
         egui::Window::new("Memo Words")
             .collapsible(false)
             .resizable(false)
-            .default_width(320.0)
+            .default_width(380.0)
             .open(&mut open)
             .show(ctx, |ui| {
-                let mut interval = self.cfg.interval_secs as u32;
-                ui.add(egui::Slider::new(&mut interval, 1..=3600).text("Interval"));
-                self.cfg.interval_secs = u64::from(interval);
+                ui.spacing_mut().item_spacing = egui::vec2(10.0, 7.0);
+                ui.spacing_mut().slider_width = 180.0;
+                ui.set_min_width(340.0);
 
-                let mut jitter = self.cfg.jitter_secs as u32;
-                ui.add(egui::Slider::new(&mut jitter, 0..=900).text("Jitter"));
-                self.cfg.jitter_secs = u64::from(jitter);
+                ui.horizontal(|ui| {
+                    ui.label(
+                        egui::RichText::new(self.source_kind.label())
+                            .monospace()
+                            .small()
+                            .color(egui::Color32::from_rgb(127, 209, 174)),
+                    );
+                    ui.label(
+                        egui::RichText::new(format!("{} words", self.deck.words().len()))
+                            .small()
+                            .weak(),
+                    );
+                    ui.label(
+                        egui::RichText::new(format!("{} shown", self.session_words.len()))
+                            .small()
+                            .weak(),
+                    );
+                });
 
-                ui.add(egui::Slider::new(&mut self.cfg.card_opacity, 0.0..=1.0).text("Opacity"));
-                ui.add(egui::Slider::new(&mut self.cfg.corner_radius, 0.0..=64.0).text("Radius"));
-                ui.add(egui::Slider::new(&mut self.cfg.screen_margin, 0.0..=240.0).text("Margin"));
+                preference_section(ui, "Cadence", |ui| {
+                    egui::Grid::new("cadence_preferences")
+                        .num_columns(2)
+                        .spacing([12.0, 6.0])
+                        .show(ui, |ui| {
+                            let mut interval = self.cfg.interval_secs as u32;
+                            ui.label("Interval");
+                            ui.add(egui::Slider::new(&mut interval, 1..=3600).suffix("s"));
+                            self.cfg.interval_secs = u64::from(interval);
+                            ui.end_row();
 
-                let mut cooldown = self.cfg.cooldown_words as u32;
-                ui.add(egui::Slider::new(&mut cooldown, 0..=300).text("Cooldown"));
-                self.cfg.cooldown_words = cooldown as usize;
+                            let mut jitter = self.cfg.jitter_secs as u32;
+                            ui.label("Jitter");
+                            ui.add(egui::Slider::new(&mut jitter, 0..=900).suffix("s"));
+                            self.cfg.jitter_secs = u64::from(jitter);
+                            ui.end_row();
 
-                ui.separator();
-                ui.checkbox(&mut self.cfg.recall_mode, "Recall mode");
-                ui.checkbox(&mut self.cfg.pace_indicator, "Pace indicator");
-                ui.checkbox(&mut self.cfg.session_counter, "Session counter");
-                ui.checkbox(&mut self.cfg.high_contrast, "High contrast");
-                ui.checkbox(&mut self.cfg.familiarity_dimming, "Familiarity dimming");
-                ui.checkbox(&mut self.cfg.quiet_review_weighting, "Review weighting");
-                ui.checkbox(&mut self.cfg.placement_preview, "Placement preview");
-                ui.checkbox(&mut self.session_frozen, "Freeze current word");
+                            let mut cooldown = self.cfg.cooldown_words as u32;
+                            ui.label("Cooldown");
+                            ui.add(egui::Slider::new(&mut cooldown, 0..=300).suffix(" words"));
+                            self.cfg.cooldown_words = cooldown as usize;
+                            ui.end_row();
+                        });
+                });
+
+                preference_section(ui, "Layout", |ui| {
+                    ui.horizontal_wrapped(|ui| {
+                        ui.label("Corner");
+                        ui.selectable_value(&mut self.cfg.corner, Corner::TopLeft, "Top left");
+                        ui.selectable_value(&mut self.cfg.corner, Corner::TopRight, "Top right");
+                        ui.selectable_value(
+                            &mut self.cfg.corner,
+                            Corner::BottomLeft,
+                            "Bottom left",
+                        );
+                        ui.selectable_value(
+                            &mut self.cfg.corner,
+                            Corner::BottomRight,
+                            "Bottom right",
+                        );
+                    });
+
+                    egui::Grid::new("layout_preferences")
+                        .num_columns(2)
+                        .spacing([12.0, 6.0])
+                        .show(ui, |ui| {
+                            ui.label("Opacity");
+                            ui.add(
+                                egui::Slider::new(&mut self.cfg.card_opacity, 0.0..=1.0)
+                                    .fixed_decimals(2),
+                            );
+                            ui.end_row();
+
+                            ui.label("Radius");
+                            ui.add(egui::Slider::new(&mut self.cfg.corner_radius, 0.0..=64.0));
+                            ui.end_row();
+
+                            ui.label("Margin");
+                            ui.add(egui::Slider::new(&mut self.cfg.screen_margin, 0.0..=240.0));
+                            ui.end_row();
+                        });
+
+                    ui.checkbox(&mut self.cfg.placement_preview, "Placement preview");
+                });
+
+                preference_section(ui, "Accent", |ui| {
+                    ui.horizontal(|ui| {
+                        for (label, rgb) in ACCENT_SWATCHES {
+                            if accent_swatch_button(ui, label, rgb, self.cfg.accent_color == rgb) {
+                                self.cfg.accent_color = rgb;
+                            }
+                        }
+                    });
+                });
+
+                preference_section(ui, "Learning", |ui| {
+                    ui.columns(2, |columns| {
+                        columns[0].checkbox(&mut self.cfg.recall_mode, "Recall mode");
+                        columns[0].checkbox(&mut self.cfg.pace_indicator, "Pace indicator");
+                        columns[0].checkbox(&mut self.cfg.session_counter, "Session counter");
+                        columns[1].checkbox(&mut self.cfg.high_contrast, "High contrast");
+                        columns[1].checkbox(&mut self.cfg.familiarity_dimming, "Familiarity");
+                        columns[1].checkbox(&mut self.cfg.quiet_review_weighting, "Review boost");
+                    });
+                    ui.checkbox(&mut self.session_frozen, "Freeze current word");
+                });
             });
 
         if !open {
@@ -645,6 +756,41 @@ fn speak_word(word: &str) {
 
 #[cfg(not(target_os = "macos"))]
 fn speak_word(_word: &str) {}
+
+fn preference_section(ui: &mut egui::Ui, title: &str, add_contents: impl FnOnce(&mut egui::Ui)) {
+    ui.add_space(4.0);
+    ui.label(
+        egui::RichText::new(title)
+            .small()
+            .strong()
+            .color(egui::Color32::from_white_alpha(210)),
+    );
+    ui.separator();
+    add_contents(ui);
+}
+
+fn accent_swatch_button(ui: &mut egui::Ui, label: &str, rgb: Rgb, selected: bool) -> bool {
+    let size = egui::vec2(38.0, 24.0);
+    let (rect, response) = ui.allocate_exact_size(size, egui::Sense::click());
+    let fill = crate::ui::accent_rgba(rgb, 230);
+    ui.painter().rect_filled(rect.shrink(2.0), 5.0, fill);
+    ui.painter().rect_stroke(
+        rect.shrink(1.0),
+        5.0,
+        egui::Stroke::new(
+            if selected { 2.0_f32 } else { 1.0_f32 },
+            if selected {
+                egui::Color32::from_white_alpha(220)
+            } else {
+                egui::Color32::from_white_alpha(54)
+            },
+        ),
+        egui::StrokeKind::Inside,
+    );
+    let clicked = response.clicked();
+    response.on_hover_text(label);
+    clicked
+}
 
 fn current_local_minute() -> Option<u16> {
     let now = time::OffsetDateTime::now_local().ok()?;
