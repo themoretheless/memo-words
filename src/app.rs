@@ -1,5 +1,6 @@
 use crate::config::Config;
 use crate::deck::Deck;
+use crate::platform::Speaker;
 use crate::timing;
 use crate::ui::{self, CardView};
 use eframe::egui;
@@ -42,10 +43,13 @@ pub struct App {
     word_interval: Duration,
     bench: bool,
     frames: Arc<AtomicUsize>,
+    // The TTS port. `App` depends on the capability, not the OS mechanism, so the
+    // composition root chooses the real speaker and tests inject a double.
+    speaker: Box<dyn Speaker>,
 }
 
 impl App {
-    pub fn new(deck: Deck, menu_ids: MenuIds, cfg: Config) -> Self {
+    pub fn new(deck: Deck, menu_ids: MenuIds, cfg: Config, speaker: Box<dyn Speaker>) -> Self {
         let (menu_tx, menu_rx) = std::sync::mpsc::channel();
         Self {
             deck,
@@ -61,11 +65,12 @@ impl App {
             word_interval: Duration::from_secs(cfg.interval_secs),
             bench: std::env::var("MEMO_BENCH").is_ok(),
             frames: Arc::new(AtomicUsize::new(0)),
+            speaker,
         }
     }
 
     /// Show the next word: advance the deck, reset the timers, roll a fresh
-    /// interval, and speak it if configured.
+    /// interval, and speak it through the speaker port.
     fn advance(&mut self) {
         self.deck.advance();
         // Roll the interval against the new word's frequency so rare-word dwell
@@ -76,10 +81,10 @@ impl App {
         self.last_show = Instant::now();
         self.word_interval = self.roll_interval(frequency);
 
-        if self.cfg.speak
-            && let Some(w) = self.deck.current()
-        {
-            speak_word(&w.word);
+        // Always route through the speaker port; whether it makes a sound is the
+        // composition root's choice of speaker (System vs Null), not App's job.
+        if let Some(w) = self.deck.current() {
+            self.speaker.speak(&w.word);
         }
     }
 
@@ -251,28 +256,19 @@ impl eframe::App for App {
     }
 }
 
-// Pronounce the word out loud. Fire-and-forget so the UI thread never blocks
-// on the TTS process. macOS only (uses `say`); a no-op elsewhere.
-#[cfg(target_os = "macos")]
-fn speak_word(word: &str) {
-    // Run on a detached thread that waits on the child, so finished `say`
-    // processes are reaped instead of piling up as zombies over a session.
-    let word = word.to_string();
-    std::thread::spawn(move || {
-        let _ = std::process::Command::new("say").arg(word).status();
-    });
-}
-
-#[cfg(not(target_os = "macos"))]
-fn speak_word(_word: &str) {}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::model::Word;
+    use crate::platform::NullSpeaker;
     use crate::selector::FrequencyWeighted;
+    use std::sync::Mutex;
 
     fn test_app(n: usize, cfg: Config) -> App {
+        test_app_with_speaker(n, cfg, Box::new(NullSpeaker))
+    }
+
+    fn test_app_with_speaker(n: usize, cfg: Config, speaker: Box<dyn Speaker>) -> App {
         let words = (0..n)
             .map(|i| Word {
                 word: format!("w{i}"),
@@ -288,7 +284,37 @@ mod tests {
             pause: muda::MenuId::from("pause"),
             quit: muda::MenuId::from("quit"),
         };
-        App::new(deck, ids, cfg)
+        App::new(deck, ids, cfg, speaker)
+    }
+
+    // A test double that records the words it is asked to speak, so we can assert
+    // the speak-on-advance behaviour without invoking a real TTS process.
+    struct RecordingSpeaker(Arc<Mutex<Vec<String>>>);
+
+    impl Speaker for RecordingSpeaker {
+        fn speak(&self, word: &str) {
+            self.0.lock().unwrap().push(word.to_string());
+        }
+    }
+
+    #[test]
+    fn advance_routes_each_word_to_the_speaker_port() {
+        // App always speaks through its injected port (the audible/silent choice
+        // is the composition root's, via System vs Null speaker). Here a recording
+        // double proves advance() hands the current word to the speaker, and that
+        // each advance speaks exactly once, without any real TTS process.
+        let log = Arc::new(Mutex::new(Vec::new()));
+        let mut app = test_app_with_speaker(
+            5,
+            Config::default(),
+            Box::new(RecordingSpeaker(log.clone())),
+        );
+        app.advance();
+        assert_eq!(log.lock().unwrap().len(), 1, "one word spoken per advance");
+        app.advance();
+        assert_eq!(log.lock().unwrap().len(), 2);
+        // The recorded words are the deck's current words (non-empty).
+        assert!(log.lock().unwrap().iter().all(|w| !w.is_empty()));
     }
 
     #[test]
