@@ -3,6 +3,7 @@ mod config;
 mod deck;
 mod fallback;
 mod model;
+mod platform;
 mod selector;
 mod source;
 mod theme;
@@ -73,7 +74,19 @@ fn main() -> eframe::Result<()> {
         Box::new(|cc| {
             ui::setup_visuals(&cc.egui_ctx);
             ui::load_fonts(&cc.egui_ctx);
-            Ok(Box::new(app::App::new(deck, menu_ids.clone(), cfg)))
+            // Pick the TTS adapter at the composition root: speak aloud only when
+            // configured, otherwise a no-op speaker. App just routes to the port.
+            let speaker: Box<dyn platform::Speaker> = if cfg.speak {
+                Box::new(platform::SystemSpeaker)
+            } else {
+                Box::new(platform::NullSpeaker)
+            };
+            Ok(Box::new(app::App::new(
+                deck,
+                menu_ids.clone(),
+                cfg,
+                speaker,
+            )))
         }),
     )
 }
