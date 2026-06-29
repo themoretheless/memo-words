@@ -146,6 +146,10 @@ speak = true
 
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) - module layout, layering, and the
   key invariants (zero idle cost, default-preserving config, the fixed card).
-- [`docs/RECOMMENDATION.md`](docs/RECOMMENDATION.md) - a critical audit of known
-  weaknesses and prioritised improvements.
+- [`docs/RECOMMENDATION.md`](docs/RECOMMENDATION.md) - the current top 200 audit
+  of known weaknesses and prioritised improvements.
 - [`docs/DESIGN_IDEAS.md`](docs/DESIGN_IDEAS.md) - the running design backlog.
+
+Compatibility aliases are kept at the repository root for quick lookup:
+[`architecture.md`](architecture.md) and [`recommendation.md`](recommendation.md).
+The canonical documents live in `docs/`.

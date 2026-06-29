@@ -3,7 +3,9 @@
 memo-words is a small macOS ambient overlay built on Rust 2024 + eframe (egui
 0.34, wgpu). This document describes how the code is organised after the modular
 refactor (PRs #41-#44). It is the map; `README.md` is the user guide and
-`RECOMMENDATION.md` is the known-issues / improvement list.
+`RECOMMENDATION.md` is the top 200 known-issues / improvement list. Root files
+`architecture.md` and `recommendation.md` are compatibility aliases that point
+back to the canonical docs.
 
 ## The product in one paragraph
 
