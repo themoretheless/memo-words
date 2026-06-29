@@ -46,16 +46,31 @@ fn main() -> eframe::Result<()> {
         pause: pause_item.id().clone(),
         quit: quit_item.id().clone(),
     };
-    menu.append(&next_item).unwrap();
-    menu.append(&pause_item).unwrap();
-    menu.append(&quit_item).unwrap();
+    // Tray failures are not fatal: the overlay still cycles words on the timer
+    // without a tray menu, so log and continue rather than crash on startup.
+    if let Err(e) = menu.append(&next_item) {
+        eprintln!("memo-words: could not add the 'Next word' menu item: {e}");
+    }
+    if let Err(e) = menu.append(&pause_item) {
+        eprintln!("memo-words: could not add the 'Pause / Resume' menu item: {e}");
+    }
+    if let Err(e) = menu.append(&quit_item) {
+        eprintln!("memo-words: could not add the 'Quit' menu item: {e}");
+    }
 
-    let _tray = TrayIconBuilder::new()
-        .with_icon(tray::create_icon())
+    let mut tray_builder = TrayIconBuilder::new()
         .with_tooltip("Memo Words")
-        .with_menu(Box::new(menu))
-        .build()
-        .expect("Failed to build tray icon");
+        .with_menu(Box::new(menu));
+    if let Some(icon) = tray::create_icon() {
+        tray_builder = tray_builder.with_icon(icon);
+    }
+    let _tray = match tray_builder.build() {
+        Ok(tray) => Some(tray),
+        Err(e) => {
+            eprintln!("memo-words: tray icon unavailable ({e}); continuing without it.");
+            None
+        }
+    };
 
     let options = eframe::NativeOptions {
         viewport: eframe::egui::ViewportBuilder::default()

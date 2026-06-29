@@ -4,6 +4,38 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- Example sentence line on the card, with the deck and fallback carrying an
+  optional `example` field.
+- Many opt-in, default-preserving config keys: `card_opacity`, `corner_radius`,
+  `recall_mode` (hold the translation back for active recall), `exit_duration`
+  (exit fade), `recap_chance` (interleaved spaced recap), `settle_px` (entrance
+  settle), `accent_color` (accent rule), `sheen` (faux-vibrancy), and
+  `rare_word_dwell` (longer dwell for rarer words).
+- Soft drop shadow + hairline border on the card, and an answer-first type
+  hierarchy (translation outranks the IPA), guarded at compile time.
+
+### Changed
+- Decomposed the code into cohesive, loosely-coupled modules: `model`, `source`,
+  `fallback`, a pure `timing` (choreography/pacing/scheduling shared by the
+  scheduler and renderer), `theme`, and `platform`, leaving `app` a thin eframe
+  adapter. The repaint-scheduling decision is now a pure, unit-tested function.
+- Text-to-speech is behind a `Speaker` port chosen at the composition root.
+
+### Fixed
+- Reject non-finite (`nan`/`inf`) config values so they can't poison a field
+  (e.g. an infinite delay that would pin the app at 60fps).
+- Start up gracefully: a tray, menu, or tokio-runtime failure now logs and
+  continues (or falls back to the built-in deck) instead of panicking.
+- Tiny decks (2 words) no longer repeat the same word back-to-back.
+- `Info.plist` version synced to 0.2.0 (was 0.1.0).
+
+### Docs
+- Added `docs/ARCHITECTURE.md` and `docs/RECOMMENDATION.md` (a critical audit),
+  and synced the README config table (all keys) and Word schema.
+
 ## [0.2.0]
 
 ### Added

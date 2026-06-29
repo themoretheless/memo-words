@@ -26,8 +26,15 @@ pub struct Deck {
 impl Deck {
     pub fn new(words: Vec<Word>, selector: Box<dyn WordSelector>) -> Self {
         // Window sized to ~a third of the deck, capped so large decks stay
-        // varied and small decks (< 3 words) don't exclude every candidate.
-        let recent_cap = (words.len() / 3).min(100);
+        // varied. For 2+ words keep at least 1 in the window so the same word
+        // never repeats back-to-back, but never the whole deck (always leave at
+        // least one candidate). A 0- or 1-word deck can't avoid repeats, so its
+        // window is 0.
+        let recent_cap = if words.len() <= 1 {
+            0
+        } else {
+            (words.len() / 3).clamp(1, (words.len() - 1).min(100))
+        };
         Self {
             words,
             selector,
@@ -162,11 +169,25 @@ mod tests {
     }
 
     #[test]
-    fn tiny_deck_has_no_window_and_still_advances() {
-        // 2 words -> recent_cap 0; repeats are allowed but it must not panic
-        // or stall.
+    fn tiny_deck_alternates_without_immediate_repeat() {
+        // 2 words -> recent_cap 1, so the same word never appears back-to-back.
         let mut d = deck(2);
+        d.advance();
+        let mut prev = d.current().unwrap().word.clone();
         for _ in 0..10 {
+            d.advance();
+            let now = d.current().unwrap().word.clone();
+            assert_ne!(now, prev, "tiny deck must not repeat back-to-back");
+            prev = now;
+        }
+    }
+
+    #[test]
+    fn single_word_deck_still_advances_without_panicking() {
+        // 1 word -> recent_cap 0; it can only repeat, but must never panic or
+        // stall (the candidate set is always the single word).
+        let mut d = deck(1);
+        for _ in 0..5 {
             d.advance();
             assert!(d.current().is_some());
         }

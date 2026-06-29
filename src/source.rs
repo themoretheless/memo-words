@@ -35,7 +35,15 @@ impl Default for MongoWordSource {
 
 impl WordSource for MongoWordSource {
     fn load(&self) -> Vec<Word> {
-        let rt = tokio::runtime::Runtime::new().expect("Failed to create tokio runtime");
+        // Match the rest of this path: any failure returns an empty vec so the
+        // caller (WithFallback) substitutes the built-in deck, instead of a panic.
+        let rt = match tokio::runtime::Runtime::new() {
+            Ok(rt) => rt,
+            Err(e) => {
+                eprintln!("Failed to create tokio runtime: {e}");
+                return Vec::new();
+            }
+        };
         rt.block_on(async {
             let mut options = match mongodb::options::ClientOptions::parse(&self.uri).await {
                 Ok(o) => o,

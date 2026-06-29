@@ -83,14 +83,14 @@ fn parse_finite_f32(s: &str) -> Option<f32> {
 pub struct Config {
     pub interval_secs: u64,
     pub jitter_secs: u64,
-    /// Seconds before the transcription line starts fading in. Floored at 0.0;
+    /// Seconds before the transcription line starts fading in. Clamped to >= 0.0;
     /// non-finite values are rejected.
     pub transcription_delay: f32,
-    /// Seconds before the translation line starts fading in. Floored at 0.0;
+    /// Seconds before the translation line starts fading in. Clamped to >= 0.0;
     /// non-finite values are rejected. In recall mode the effective reveal is
     /// pushed later (see `App::effective_translation_delay`).
     pub translation_delay: f32,
-    /// Seconds each line takes to fade in. Floored at 0.01; non-finite rejected.
+    /// Seconds each line takes to fade in. Clamped to >= 0.01; non-finite rejected.
     pub fade_duration: f32,
     pub corner: Corner,
     pub speak: bool,

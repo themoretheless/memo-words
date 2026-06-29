@@ -1,6 +1,9 @@
 use tray_icon::Icon as TrayIcon;
 
-pub fn create_icon() -> TrayIcon {
+/// Build the procedural "W" tray icon. Returns `None` if the icon resource can't
+/// be created, so the caller can run without it rather than crash (the tray is a
+/// convenience, not a requirement).
+pub fn create_icon() -> Option<TrayIcon> {
     let (w, h) = (22u32, 22u32);
     let mut rgba = vec![0u8; (w * h * 4) as usize];
 
@@ -25,5 +28,5 @@ pub fn create_icon() -> TrayIcon {
         }
     }
 
-    TrayIcon::from_rgba(rgba, w, h).expect("Failed to create tray icon")
+    TrayIcon::from_rgba(rgba, w, h).ok()
 }
