@@ -146,7 +146,7 @@ speak = true
 
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) - module layout, layering, and the
   key invariants (zero idle cost, default-preserving config, the fixed card).
-- [`docs/RECOMMENDATION.md`](docs/RECOMMENDATION.md) - the current top 200 audit
+- [`docs/RECOMMENDATION.md`](docs/RECOMMENDATION.md) - the current top 50 audit
   of known weaknesses and prioritised improvements.
 - [`docs/DESIGN_IDEAS.md`](docs/DESIGN_IDEAS.md) - the running design backlog.
 
