@@ -31,9 +31,13 @@ pub fn fade_factor(elapsed: f32, delay: f32, fade_duration: f32) -> f32 {
 /// Whole-card opacity multiplier (1..0) for the exit fade. `until_next` is the
 /// seconds left before the next word; once it drops below `exit_duration` the
 /// card eases out, reaching 0 exactly at the swap. With `exit_duration <= 0` the
-/// card never fades.
-pub fn exit_alpha(until_next: f32, exit_duration: f32) -> f32 {
-    if exit_duration <= 0.0 || until_next >= exit_duration {
+/// card never fades. While `paused` the fade is suppressed entirely (always
+/// 1.0): `until_next` keeps counting down against wall-clock time even though
+/// nothing is advancing, so without this the card would ease to fully invisible
+/// once a pause outlasted the word interval. Pausing must freeze the card, not
+/// fade it away.
+pub fn exit_alpha(until_next: f32, exit_duration: f32, paused: bool) -> f32 {
+    if paused || exit_duration <= 0.0 || until_next >= exit_duration {
         return 1.0;
     }
     let progress = 1.0 - (until_next.max(0.0) / exit_duration);
@@ -173,18 +177,31 @@ mod tests {
 
     #[test]
     fn exit_alpha_off_and_before_window_is_full() {
-        assert_eq!(exit_alpha(5.0, 0.0), 1.0);
-        assert_eq!(exit_alpha(0.0, 0.0), 1.0);
-        assert_eq!(exit_alpha(2.0, 0.5), 1.0);
-        assert_eq!(exit_alpha(0.5, 0.5), 1.0); // exactly at the window edge
+        assert_eq!(exit_alpha(5.0, 0.0, false), 1.0);
+        assert_eq!(exit_alpha(0.0, 0.0, false), 1.0);
+        assert_eq!(exit_alpha(2.0, 0.5, false), 1.0);
+        assert_eq!(exit_alpha(0.5, 0.5, false), 1.0); // exactly at the window edge
     }
 
     #[test]
     fn exit_alpha_eases_to_zero_at_the_swap() {
         let dur = 0.5;
-        assert!((exit_alpha(0.25, dur) - 0.5).abs() < 1e-6);
-        assert_eq!(exit_alpha(0.0, dur), 0.0);
-        assert!(exit_alpha(0.1, dur) < exit_alpha(0.4, dur));
+        assert!((exit_alpha(0.25, dur, false) - 0.5).abs() < 1e-6);
+        assert_eq!(exit_alpha(0.0, dur, false), 0.0);
+        assert!(exit_alpha(0.1, dur, false) < exit_alpha(0.4, dur, false));
+    }
+
+    #[test]
+    fn exit_alpha_stays_full_while_paused_even_past_the_window() {
+        // Regression: `until_next` keeps counting down against wall-clock time
+        // even while paused (nothing resets it until resume). Before this fix,
+        // a pause that outlasted the word interval eased exit_alpha to 0 - a
+        // paused card would render fully invisible instead of staying frozen.
+        let dur = 0.5;
+        assert_eq!(exit_alpha(0.0, dur, true), 1.0);
+        assert_eq!(exit_alpha(0.25, dur, true), 1.0);
+        // Same inputs without `paused` do fade, proving this isn't a no-op change.
+        assert!(exit_alpha(0.0, dur, false) < 1.0);
     }
 
     #[test]
