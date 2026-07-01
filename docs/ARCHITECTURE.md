@@ -2,10 +2,11 @@
 
 memo-words is a small macOS ambient overlay built on Rust 2024 + eframe (egui
 0.34, wgpu). This document describes how the code is organised after the modular
-refactor (PRs #41-#44). It is the map; `README.md` is the user guide and
-`RECOMMENDATION.md` is the top 200 known-issues / improvement list. Root files
-`architecture.md` and `recommendation.md` are compatibility aliases that point
-back to the canonical docs.
+refactor (PRs #41-#44, with startup-hardening fixes since). It is the map;
+`README.md` is the user guide and `RECOMMENDATION.md` is the top 50
+known-issues / improvement list. Root files `architecture.md` and
+`recommendation.md` are compatibility aliases that point back to the canonical
+docs.
 
 ## The product in one paragraph
 
@@ -105,7 +106,7 @@ so the timeline is defined once and is testable without a window.
 
 ## Testing
 
-Each core module carries unit tests (65 total). The pure core (`timing`, `deck`,
+Each core module carries unit tests (66 total). The pure core (`timing`, `deck`,
 `selector`, `model`) is fully testable with no egui or OS. Visual output is not
 pixel-verified in CI; geometry and choreography are proven by arithmetic, unit
 tests, and the compile-time hierarchy guard instead. There are currently **no**
