@@ -2,6 +2,12 @@
 name = "memo-words"
 version = "0.2.0"
 edition = "2024"
+description = "An ambient vocabulary overlay: a small always-on-top, click-through card that teaches you words passively while you work."
+authors = ["Denis Mezhov"]
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/themoretheless/memo-words"
+readme = "README.md"
+keywords = ["vocabulary", "language-learning", "overlay", "macos"]
 
 [dependencies]
 eframe = { version = "0.34", default-features = false, features = ["wgpu", "default_fonts"] }

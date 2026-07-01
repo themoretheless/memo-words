@@ -153,3 +153,8 @@ speak = true
 Compatibility aliases are kept at the repository root for quick lookup:
 [`architecture.md`](architecture.md) and [`recommendation.md`](recommendation.md).
 The canonical documents live in `docs/`.
+
+## License
+
+Licensed under either of [Apache License, Version 2.0](LICENSE-APACHE) or
+[MIT license](LICENSE-MIT) at your option.

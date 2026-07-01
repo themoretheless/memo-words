@@ -3,8 +3,10 @@
 #
 # CI runs `advisories`, `bans`, and `sources`. The `licenses` check is
 # intentionally not enforced: every dependency here is a standard permissive
-# license, and maintaining an exhaustive allow-list for a personal, unpublished
-# app would break CI on routine dependency bumps for no real benefit.
+# license (matching this project's own MIT OR Apache-2.0), and maintaining an
+# exhaustive allow-list would break CI on routine dependency bumps for no real
+# benefit. The app itself ships public GitHub Releases, so this is a deliberate
+# scope choice for a small solo project, not a "nobody else can see this" excuse.
 
 [advisories]
 # Security vulnerabilities and yanked crates fail the build. The dependency
