@@ -197,7 +197,11 @@ impl eframe::App for App {
         // fade as the swap approaches (1.0 = fully shown, no fade by default).
         let exit_window = timing::exit_window(&self.cfg, self.word_interval);
         let until_next = self.word_interval.saturating_sub(self.last_show.elapsed());
-        let exit_alpha = timing::exit_alpha(until_next.as_secs_f32(), exit_window.as_secs_f32());
+        let exit_alpha = timing::exit_alpha(
+            until_next.as_secs_f32(),
+            exit_window.as_secs_f32(),
+            self.paused,
+        );
         let accent = self
             .cfg
             .accent_color
