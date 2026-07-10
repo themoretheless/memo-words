@@ -51,6 +51,15 @@ calm-ambient identity (heavy motion, chrome, interactivity) are downranked.
   vocab lingers longer for more exposure, while common words keep the base
   interval. Off by default, pure interval math in `app.rs`, no persistence. First
   round-3 ship-now item landed. (Duolingo adaptive spacing; round 3 #4)
+- **Coordinated theme presets** - `graphite`, `midnight`, `paper`, and
+  `high-contrast` now define surface, border, shadow, semantic text colours,
+  typography, and geometry as one token system. Graphite preserves the original
+  default. (Raycast, Linear, macOS materials)
+- **Accessibility design controls** - `font_scale` scales text and card geometry
+  together; `enhanced_contrast` raises surface/border/text visibility; and
+  `reduce_motion` disables settle, exit fade, and width morphing while retaining
+  opacity reveal. System preference auto-detection remains backlog. (macOS
+  accessibility, WCAG motion guidance)
 
 ## Top 10 (round 2)
 
@@ -66,7 +75,7 @@ the actual source. Notes record the feasibility findings.
 | 4 | **Faux-vibrancy material** - `sheen` (0..1) paints a faint top gradient as a 4-vertex mesh, inset within the rounded corners and confined to the top. Default-off, kept subtle. Top inner-highlight stroke deferred (the gradient alone carries the cue) | macOS NSVisualEffectView, Dynamic Island | Med | Med | Low | ✅ shipped |
 | 5 | **Spaced-repetition selection (Leitner)** - prefer due words on an expanding schedule instead of pure frequency weighting; the highest learning lever. Blocked on two real gaps: `choose()` is `&self` (can't mutate box state) and there is no persistence layer at all, so it must add a read/write state file. Unlocks #8 too | Anki / SuperMemo, Memrise | High | High | Med | backlog (needs persistence) |
 | 6 | **Exit collapse** - the width-collapse increment on top of #1: ease width back toward `MIN_WIDTH` as the card fades out. Do #1 first; this is its superset | iOS Live Activities | Med | Med | Med | backlog (after #1) |
-| 7 | **Named theme presets** - a `theme =` key (graphite, mono, midnight, paper) applying a vetted palette before per-key overrides. Needs raw color keys (`CARD_TINT`, border, per-line alphas) promoted to config first, then presets on top; the single-pass merge makes base-key order a footgun to test | Raycast, Linear, Arc | Med | Med | Low | backlog (after color keys) |
+| 7 | **Named theme presets** - `theme = graphite/midnight/paper/high-contrast` selects a coordinated semantic palette and geometry system; Graphite is default-preserving | Raycast, Linear, Arc | Med | Med | Low | ✅ shipped |
 | 8 | **Familiarity-adaptive reveal pacing** - scale per-line delays by how often a word has been seen (new words reveal sooner, known words hold on the headword as a recognition test). Cheap once stats exist, but a no-op until #5 lands persistence | Anki graduating intervals, Duolingo | Med | Med | Low | backlog (after persistence) |
 | 9 | **Static accent rule** - `accent_color` draws a short thin rounded bar under the headword (default off). The lightweight precursor to #7's accent key. Carries no information and adds the first chroma to a monochrome design, so opt-in | Reeder rules, Things 3 underlines | Med | Low | Low | ✅ shipped |
 | 10 | **Per-line vertical settle** - `settle_px` drifts each line up a few px as it fades in, offsetting only the galley draw pos (cache-stable, no extra idle frames). Off by default | Apple Dictionary reveal, Drops stagger | Med | Low | Med | ✅ shipped |
@@ -115,15 +124,15 @@ defaults without pixel checks. Ordered by value-to-effort.
 |---|------|-------------|-----------|--------|-------|
 | 1 | **Focus/DND auto-pause** - pause rotation while macOS Focus/Do-Not-Disturb or a fullscreen app is active; resume after. `respect_dnd` (default on) | macOS Focus modes | config-only | M | High |
 | 2 | **Idle-repaint abort gate** - after the card settles, stop requesting repaints entirely until the next state change; tightens the zero-idle invariant | VS Code idle timer | ready | S | High |
-| 3 | **Font scale knob** - `font_scale` (0.8..1.5) scales every line proportionally, hierarchy and card height preserved | Raycast text size | ready | S | High |
+| 3 | **Font scale knob** - `font_scale` (0.8..1.5) scales type, spacing, width limits, and card height together | Raycast text size | shipped | S | High |
 | 4 | **Difficulty-aware dwell** - rare words hold longer, common words pass quicker; `contextual_jitter` (default off) | Duolingo spacing | ready | M | High |
 | 5 | **Entrance easing presets** - `entrance_curve` (spring / ease-in-out / linear / smooth) as pure preset functions, no extra idle cost | Framer motion | config-only | M | High |
-| 6 | **Reduced-motion honor** - read the system reduce-motion flag; when set, disable `settle_px` and `exit_duration` | WCAG / macOS a11y | config-only | M | High |
+| 6 | **Reduced-motion honor** - explicit `reduce_motion` is shipped; reading the macOS system flag remains | WCAG / macOS a11y | partial | M | High |
 | 7 | **Position awareness** - query the usable screen frame (dock/notch) once and nudge the corner so the card never overlaps; `margin_x/y` overrides | NSScreen, Raycast | config-only | M | High |
 | 8 | **Themed deck rotation** - optional `theme_tag` on words + `theme_rotation_mode` (daily/weekly); selector filters to the active theme | Duolingo themes | config-only | M | High |
 | 9 | **Time-of-day pacing** - `morning/afternoon/evening_interval_secs`, chosen by the system clock at each roll | habit / circadian apps | config-only | S | High |
 | 10 | **Recently-seen decay** - in-memory throttle of words shown in the last N hours via `decay_window_hours` + `decay_strength` (no disk) | Anki recent-avoidance | ready | M | High |
-| 11 | **Enhanced-contrast toggle** - `enhanced_contrast` brightens text and bumps opacity while preserving the hierarchy (WCAG AAA target) | macOS Increase Contrast | config-only | S | High |
+| 11 | **Enhanced-contrast toggle** - shipped as an explicit config control; system Increase Contrast sync and numeric WCAG tests remain | macOS Increase Contrast | partial | S | High |
 | 12 | **Mini flashcard reveal** - generalises recall mode: translation starts hidden, fades in after a dwell/timeout; `translation_hide_mode` | Anki reveal | config-only | M | High |
 
 ### Full curated bank (46)
@@ -136,16 +145,16 @@ disk state layer first; **cosmetic** = works but near-zero learning value.
 |---|------|-----------|-----|-----|
 | 1 | Focus/DND auto-pause | config | M | High |
 | 2 | Idle-repaint abort gate | ready | S | High |
-| 3 | Font scale knob | ready | S | High |
+| 3 | Font scale knob | shipped | S | High |
 | 4 | Difficulty-aware dwell | ready | M | High |
 | 5 | Entrance easing presets | config | M | High |
-| 6 | Reduced-motion honor | config | M | High |
+| 6 | Reduced-motion honor | partial | M | High |
 | 7 | Position awareness (dock/notch) | config | M | High |
 | 8 | Themed deck rotation | config | M | High |
 | 9 | Time-of-day pacing | config | S | High |
 | 10 | Recently-seen decay window | ready | M | High |
 | 11 | Avoid-seen-today filter | config | M | High |
-| 12 | Enhanced-contrast toggle | config | S | High |
+| 12 | Enhanced-contrast toggle | partial | S | High |
 | 13 | Deck progress badge (47/350) | config | S | Med |
 | 14 | Frequency-tier glyph (dots/stars) | ready | S | Med |
 | 15 | Pause indicator (dim when paused) | ready | M | Med |

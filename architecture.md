@@ -1,7 +1,10 @@
 # Architecture
 
-The canonical architecture document is
-[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
+The canonical SOLID/DRY architecture document is
+[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md). It contains the current module
+tree, dependency direction, runtime flow, configuration boundaries, and an
+18-step reading order for understanding the project in small pieces.
 
 This root-level alias exists so quick links to `architecture.md` keep working
-without duplicating content.
+without duplicating content. The related 500-item audit is maintained once in
+[`docs/RECOMMENDATION.md`](docs/RECOMMENDATION.md).

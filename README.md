@@ -15,10 +15,12 @@ top of your other windows and teach you words passively while you work.
   appears after the interval (default 30s, optionally jittered).
 - Words are chosen weighted by frequency rank (common words appear more often),
   while a sliding window of recently shown words prevents short-term repeats.
-- Many aspects are optional and default-preserving: card opacity and corner
-  radius, an exit fade, an entrance settle, an accent rule, a faux-vibrancy
-  sheen, an active-recall mode, spaced recap, and extra dwell for rarer words.
-  All are off or unchanged unless you opt in (see the configuration table).
+- Appearance is a coordinated system rather than isolated decoration: four
+  theme presets, proportional text/card scaling, enhanced contrast, reduced
+  motion, opacity/radius, accent, and sheen. Graphite at scale 1.0 preserves the
+  original defaults.
+- Active recall, spaced recap, speech, jitter, and extra dwell for rarer words
+  are optional and default-preserving.
 - The overlay only repaints while a card is animating; once a card has fully
   settled it sleeps until the next word is due, so an idle overlay costs almost
   no CPU/GPU.
@@ -74,8 +76,9 @@ unparseable values are ignored, so a malformed file never stops the app from
 starting. Every key defaults to the original behaviour, so no config file means
 no change.
 
-All 16 keys are listed below. Every one defaults to the original behaviour, so an
-absent key changes nothing. `config.example.conf` is a complete annotated example.
+All 20 keys are listed below. Every key has a safe default; `graphite`,
+`font_scale = 1.0`, and disabled accessibility overrides preserve the original
+look and behavior. `config.example.conf` is the complete annotated example.
 
 **Timing**
 
@@ -86,6 +89,7 @@ absent key changes nothing. `config.example.conf` is a complete annotated exampl
 | `transcription_delay` | `5.0`          | Seconds before the transcription fades in (clamped to >= 0).   |
 | `translation_delay`   | `10.0`         | Seconds before the translation fades in (clamped to >= 0).     |
 | `fade_duration`       | `1.0`          | Fade-in duration in seconds (clamped to >= 0.01).              |
+| `exit_duration`       | `0.0`          | Seconds the card fades out before a swap (0.0..10.0, capped to half the interval). |
 | `rare_word_dwell`     | `0.0`          | Extra display time for rarer words (0.0..1.0); the interval is multiplied by up to `1 + value` as the frequency rank rises. `0` = off. |
 
 **Appearance**
@@ -93,20 +97,28 @@ absent key changes nothing. `config.example.conf` is a complete annotated exampl
 | Key             | Default        | Meaning                                                              |
 |-----------------|----------------|----------------------------------------------------------------------|
 | `corner`        | `bottom-right` | Card position: `top-left`, `top-right`, `bottom-left`, `bottom-right`. |
-| `card_opacity`  | `0.30`         | Card background opacity (0.0 invisible .. 1.0 opaque).               |
-| `corner_radius` | `16.0`         | Card corner radius in points (0.0..64.0).                           |
+| `card_opacity`  | `0.30`         | Requested background opacity (0.0..1.0); readable presets may apply a floor. |
+| `corner_radius` | `16.0`         | Card corner radius in points (0.0..64.0).                            |
 | `settle_px`     | `0.0`          | Points each line drifts up as it fades in (0.0..16.0). `0` = off.    |
-| `accent_color`  | _(unset)_      | A thin accent rule under the headword, as bare hex `rrggbb` (no `#`, which starts a comment). Unset = no rule. |
-| `sheen`         | `0.0`          | Strength of a faint top "lit material" highlight (0.0..1.0). `0` = off. |
-| `exit_duration` | `0.0`          | Seconds the card fades out before the next word (0.0..10.0, capped to half the interval). `0` = hard cut. |
+| `accent_color`  | _(unset)_      | Accent rule as `rrggbb` or `#rrggbb`. Unset = no rule.               |
+| `sheen`         | `0.0`          | Strength of a faint top material highlight (0.0..1.0). `0` = off.    |
+| `theme`         | `graphite`     | Coordinated palette: `graphite`, `midnight`, `paper`, `high-contrast`. |
 
-**Behaviour**
+**Learning**
 
 | Key            | Default | Meaning                                                              |
 |----------------|---------|----------------------------------------------------------------------|
 | `recall_mode`  | `false` | Hold the translation back to ~55% of the interval for active recall. `true`/`1`/`yes`/`on`. |
 | `recap_chance` | `0.0`   | Probability (0.0..1.0) that a swap re-shows an earlier word for spaced review instead of a fresh one. |
 | `speak`        | `false` | Speak each word aloud (macOS `say`). `true`/`1`/`yes`/`on` enable it. |
+
+**Accessibility**
+
+| Key                 | Default | Meaning                                                             |
+|---------------------|---------|---------------------------------------------------------------------|
+| `font_scale`        | `1.0`   | Scale text, spacing, width limits, and card height together (0.8..1.5). |
+| `enhanced_contrast` | `false` | Raise surface, border, and secondary-text contrast while preserving hierarchy. |
+| `reduce_motion`     | `false` | Disable settle, exit fade, and width morphing; opacity reveal remains. |
 
 Example `config.conf`:
 
@@ -116,6 +128,9 @@ jitter_secs = 5
 corner = top-right
 card_opacity = 0.45
 exit_duration = 0.4
+theme = midnight
+font_scale = 1.15
+enhanced_contrast = true
 recall_mode = true
 speak = true
 ```
@@ -144,15 +159,20 @@ speak = true
 
 ## Documentation
 
-- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) - module layout, layering, and the
-  key invariants (zero idle cost, default-preserving config, the fixed card).
-- [`docs/RECOMMENDATION.md`](docs/RECOMMENDATION.md) - the current top 50 audit
-  of known weaknesses and prioritised improvements.
+- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) - SOLID/DRY module map,
+  dependency direction, runtime flow, and an 18-step small-piece reading order.
+- [`docs/RECOMMENDATION.md`](docs/RECOMMENDATION.md) - the canonical 500-item
+  register: 20 product/engineering areas with 25 findings and actions each.
 - [`docs/DESIGN_IDEAS.md`](docs/DESIGN_IDEAS.md) - the running design backlog.
 
 Compatibility aliases are kept at the repository root for quick lookup:
 [`architecture.md`](architecture.md) and [`recommendation.md`](recommendation.md).
 The canonical documents live in `docs/`.
+
+For a quick code tour, start with `model.rs`, `selector.rs`, `deck.rs`, and
+`session.rs`; then read the four small `timing/` modules, `theme.rs`, and the four
+`ui/` modules before opening `app.rs` and `main.rs`. The architecture document
+explains what question each file answers.
 
 ## License
 
