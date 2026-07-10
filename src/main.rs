@@ -35,8 +35,8 @@ fn main() -> eframe::Result<()> {
     } else {
         Box::new(WithFallback(MongoWordSource::default()))
     };
-    let deck =
-        Deck::new(source.load(), Box::new(FrequencyWeighted)).with_recap_chance(cfg.recap_chance);
+    let deck = Deck::new(source.load(), Box::new(FrequencyWeighted))
+        .with_recap_chance(cfg.learning.recap_chance);
 
     let menu = Menu::new();
     let next_item = MenuItem::new("Next word", true, None);
@@ -92,7 +92,7 @@ fn main() -> eframe::Result<()> {
             ui::load_fonts(&cc.egui_ctx);
             // Pick the TTS adapter at the composition root: speak aloud only when
             // configured, otherwise a no-op speaker. App just routes to the port.
-            let speaker: Box<dyn platform::Speaker> = if cfg.speak {
+            let speaker: Box<dyn platform::Speaker> = if cfg.learning.speak {
                 Box::new(platform::SystemSpeaker)
             } else {
                 Box::new(platform::NullSpeaker)

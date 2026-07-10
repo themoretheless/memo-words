@@ -2,8 +2,9 @@ use crate::config::Config;
 use crate::deck::Deck;
 use crate::platform::Speaker;
 use crate::session::SessionClock;
+use crate::theme::Theme;
 use crate::timing;
-use crate::ui::{self, CardContent, CardStyle, CardTimeline, CardView};
+use crate::ui::{CardContent, CardStyle, CardTimeline, CardView};
 use eframe::egui;
 use muda::MenuEvent;
 use rand::RngExt;
@@ -34,6 +35,7 @@ pub struct App {
     deck: Deck,
     clock: SessionClock,
     prev_width: f32,
+    theme: Theme,
     started: bool,
     menu_ids: MenuIds,
     menu_tx: Option<Sender<muda::MenuId>>,
@@ -50,10 +52,12 @@ impl App {
     pub fn new(deck: Deck, menu_ids: MenuIds, cfg: Config, speaker: Box<dyn Speaker>) -> Self {
         let (menu_tx, menu_rx) = std::sync::mpsc::channel();
         let now = Instant::now();
+        let theme = Theme::from_config(&cfg);
         Self {
             deck,
-            clock: SessionClock::new(now, Duration::from_secs(cfg.interval_secs)),
-            prev_width: ui::MIN_WIDTH,
+            clock: SessionClock::new(now, Duration::from_secs(cfg.timing.interval_secs)),
+            prev_width: theme.metrics.min_width,
+            theme,
             started: false,
             menu_ids,
             menu_tx: Some(menu_tx),
@@ -91,10 +95,10 @@ impl App {
     // `timing`. Clamped to >=1s.
     fn roll_interval(&self, frequency: i32) -> Duration {
         let base = timing::dwelled_base_secs(&self.cfg, frequency);
-        if self.cfg.jitter_secs == 0 {
+        if self.cfg.timing.jitter_secs == 0 {
             return Duration::from_secs(base.max(1) as u64);
         }
-        let j = self.cfg.jitter_secs as i64;
+        let j = self.cfg.timing.jitter_secs as i64;
         let delta = rng().random_range(-j..=j);
         Duration::from_secs((base + delta).max(1) as u64)
     }
@@ -164,7 +168,7 @@ impl eframe::App for App {
                 std::thread::spawn(move || {
                     std::thread::sleep(Duration::from_secs(BENCH_SECS));
                     let n = frames.load(Ordering::Relaxed);
-                    eprintln!("BENCH frames={n} fps={}", n as u64 / BENCH_SECS);
+                    eprintln!("BENCH frames={n} fps={:.2}", n as f64 / BENCH_SECS as f64);
                     ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                     ctx.request_repaint();
                 });
@@ -199,6 +203,7 @@ impl eframe::App for App {
             timing::exit_alpha(until_next.as_secs_f32(), exit_window.as_secs_f32(), paused);
         let accent = self
             .cfg
+            .appearance
             .accent_color
             .map(|[r, g, b]| egui::Color32::from_rgb(r, g, b));
 
@@ -219,19 +224,25 @@ impl eframe::App for App {
                 },
                 timeline: CardTimeline {
                     elapsed,
-                    transcription_delay: self.cfg.transcription_delay,
+                    transcription_delay: self.cfg.timing.transcription_delay,
                     translation_delay,
                     example_delay,
-                    fade_duration: self.cfg.fade_duration,
+                    fade_duration: self.cfg.timing.fade_duration,
+                    reduce_motion: self.cfg.accessibility.reduce_motion,
                 },
                 style: CardStyle {
-                    corner: self.cfg.corner,
-                    card_opacity: self.cfg.card_opacity,
-                    corner_radius: self.cfg.corner_radius,
+                    corner: self.cfg.appearance.corner,
+                    card_opacity: self.cfg.appearance.card_opacity,
+                    corner_radius: self.cfg.appearance.corner_radius,
                     exit_alpha,
-                    settle_px: self.cfg.settle_px,
+                    settle_px: if self.cfg.accessibility.reduce_motion {
+                        0.0
+                    } else {
+                        self.cfg.appearance.settle_px
+                    },
                     accent,
-                    sheen: self.cfg.sheen,
+                    sheen: self.cfg.appearance.sheen,
+                    theme: self.theme,
                 },
                 prev_width: self.prev_width,
             };
@@ -321,22 +332,18 @@ mod tests {
 
     #[test]
     fn roll_interval_no_jitter_is_exact() {
-        let cfg = Config {
-            interval_secs: 30,
-            jitter_secs: 0,
-            ..Config::default()
-        };
+        let mut cfg = Config::default();
+        cfg.timing.interval_secs = 30;
+        cfg.timing.jitter_secs = 0;
         let app = test_app(5, cfg);
         assert_eq!(app.roll_interval(1), Duration::from_secs(30));
     }
 
     #[test]
     fn roll_interval_with_jitter_stays_in_range() {
-        let cfg = Config {
-            interval_secs: 30,
-            jitter_secs: 5,
-            ..Config::default()
-        };
+        let mut cfg = Config::default();
+        cfg.timing.interval_secs = 30;
+        cfg.timing.jitter_secs = 5;
         let app = test_app(5, cfg);
         for _ in 0..1000 {
             let s = app.roll_interval(1).as_secs();
@@ -346,11 +353,9 @@ mod tests {
 
     #[test]
     fn roll_interval_never_below_one_second() {
-        let cfg = Config {
-            interval_secs: 2,
-            jitter_secs: 10,
-            ..Config::default()
-        };
+        let mut cfg = Config::default();
+        cfg.timing.interval_secs = 2;
+        cfg.timing.jitter_secs = 10;
         let app = test_app(5, cfg);
         for _ in 0..1000 {
             assert!(app.roll_interval(1) >= Duration::from_secs(1));

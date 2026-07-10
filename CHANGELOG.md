@@ -16,6 +16,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `rare_word_dwell` (longer dwell for rarer words).
 - Soft drop shadow + hairline border on the card, and an answer-first type
   hierarchy (translation outranks the IPA), guarded at compile time.
+- Coordinated `graphite`, `midnight`, `paper`, and `high-contrast` themes plus
+  `font_scale`, `enhanced_contrast`, and `reduce_motion` accessibility controls.
 
 ### Changed
 - Decomposed the code into cohesive, loosely-coupled modules: `model`, `source`,
@@ -23,6 +25,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   scheduler and renderer), `theme`, and `platform`, leaving `app` a thin eframe
   adapter. The repaint-scheduling decision is now a pure, unit-tested function.
 - Text-to-speech is behind a `Speaker` port chosen at the composition root.
+- Split configuration by timing, appearance, learning, and accessibility;
+  decomposed timing and card rendering into narrow modules, and moved pause
+  semantics into a tested session clock.
 
 ### Fixed
 - Reject non-finite (`nan`/`inf`) config values so they can't poison a field
@@ -31,6 +36,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   continues (or falls back to the built-in deck) instead of panicking.
 - Tiny decks (2 words) no longer repeat the same word back-to-back.
 - `Info.plist` version synced to 0.2.0 (was 0.1.0).
+- Pause now freezes both reveal and interval clocks without idle animation;
+  natural `accent_color = #rrggbb` values are accepted.
 
 ### Docs
 - Added `docs/ARCHITECTURE.md` and `docs/RECOMMENDATION.md` (a critical audit),

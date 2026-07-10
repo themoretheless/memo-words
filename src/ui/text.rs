@@ -28,9 +28,15 @@ pub(super) fn centered_line(
     color: egui::Color32,
     y_offset: f32,
 ) {
-    let galley = layout(ui, text, size);
-    let text_w = galley.rect.width();
     let avail = ui.available_width();
+    let measured = layout(ui, text, size);
+    let fitted_size = fit_font_size(size, measured.rect.width(), avail);
+    let galley = if fitted_size < size {
+        layout(ui, text, fitted_size)
+    } else {
+        measured
+    };
+    let text_w = galley.rect.width();
     let (rect, _) = ui.allocate_exact_size(
         egui::vec2(avail, galley.rect.height()),
         egui::Sense::hover(),
@@ -38,6 +44,14 @@ pub(super) fn centered_line(
     let x = rect.min.x + (avail - text_w) / 2.0;
     ui.painter()
         .galley(egui::pos2(x, rect.min.y + y_offset), galley, color);
+}
+
+fn fit_font_size(size: f32, measured_width: f32, available_width: f32) -> f32 {
+    if measured_width <= available_width || measured_width <= 0.0 {
+        size
+    } else {
+        size * (available_width.max(0.0) / measured_width)
+    }
 }
 
 fn layout(ui: &egui::Ui, text: &str, size: f32) -> std::sync::Arc<egui::Galley> {
@@ -81,5 +95,12 @@ mod tests {
     fn zero_and_one_character_budgets_are_safe() {
         assert_eq!(truncate_example("hello", 0), "");
         assert_eq!(truncate_example("hello", 1).chars().count(), 1);
+    }
+
+    #[test]
+    fn oversized_lines_scale_to_the_available_width() {
+        assert_eq!(fit_font_size(20.0, 200.0, 100.0), 10.0);
+        assert_eq!(fit_font_size(20.0, 80.0, 100.0), 20.0);
+        assert_eq!(fit_font_size(20.0, 0.0, 100.0), 20.0);
     }
 }

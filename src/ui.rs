@@ -8,5 +8,5 @@ mod foundation;
 mod surface;
 mod text;
 
-pub use card::{CardContent, CardStyle, CardTimeline, CardView, MIN_WIDTH};
+pub use card::{CardContent, CardStyle, CardTimeline, CardView};
 pub use foundation::{load_fonts, setup_visuals};
