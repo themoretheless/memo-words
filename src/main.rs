@@ -5,6 +5,7 @@ mod fallback;
 mod model;
 mod platform;
 mod selector;
+mod session;
 mod source;
 mod theme;
 mod timing;

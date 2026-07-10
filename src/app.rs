@@ -1,8 +1,9 @@
 use crate::config::Config;
 use crate::deck::Deck;
 use crate::platform::Speaker;
+use crate::session::SessionClock;
 use crate::timing;
-use crate::ui::{self, CardView};
+use crate::ui::{self, CardContent, CardStyle, CardTimeline, CardView};
 use eframe::egui;
 use muda::MenuEvent;
 use rand::RngExt;
@@ -31,16 +32,13 @@ pub struct MenuIds {
 /// no selection or word-storage logic of its own.
 pub struct App {
     deck: Deck,
-    shown_at: Option<Instant>,
-    last_show: Instant,
+    clock: SessionClock,
     prev_width: f32,
     started: bool,
     menu_ids: MenuIds,
     menu_tx: Option<Sender<muda::MenuId>>,
     menu_rx: Receiver<muda::MenuId>,
-    paused: bool,
     cfg: Config,
-    word_interval: Duration,
     bench: bool,
     frames: Arc<AtomicUsize>,
     // The TTS port. `App` depends on the capability, not the OS mechanism, so the
@@ -51,18 +49,16 @@ pub struct App {
 impl App {
     pub fn new(deck: Deck, menu_ids: MenuIds, cfg: Config, speaker: Box<dyn Speaker>) -> Self {
         let (menu_tx, menu_rx) = std::sync::mpsc::channel();
+        let now = Instant::now();
         Self {
             deck,
-            shown_at: None,
-            last_show: Instant::now(),
+            clock: SessionClock::new(now, Duration::from_secs(cfg.interval_secs)),
             prev_width: ui::MIN_WIDTH,
             started: false,
             menu_ids,
             menu_tx: Some(menu_tx),
             menu_rx,
-            paused: false,
             cfg,
-            word_interval: Duration::from_secs(cfg.interval_secs),
             bench: std::env::var("MEMO_BENCH").is_ok(),
             frames: Arc::new(AtomicUsize::new(0)),
             speaker,
@@ -77,9 +73,9 @@ impl App {
         // (if enabled) can stretch harder words. Unknown/absent rank reads as
         // rarest, matching the selector's convention.
         let frequency = self.deck.current().map(|w| w.frequency).unwrap_or(0);
-        self.shown_at = Some(Instant::now());
-        self.last_show = Instant::now();
-        self.word_interval = self.roll_interval(frequency);
+        let now = Instant::now();
+        let interval = self.roll_interval(frequency);
+        self.clock.start_word(now, interval);
 
         // Always route through the speaker port; whether it makes a sound is the
         // composition root's choice of speaker (System vs Null), not App's job.
@@ -156,8 +152,13 @@ impl eframe::App for App {
             if self.bench {
                 // Pin the card in its fully-settled, static state so the whole
                 // window measures idle cost, then close after BENCH_SECS.
-                self.shown_at = Some(Instant::now() - Duration::from_secs(20));
-                self.last_show = Instant::now();
+                let has_example = self
+                    .deck
+                    .current()
+                    .is_some_and(|word| !word.example.trim().is_empty());
+                let settled = timing::anim_end(&self.cfg, has_example) + 1.0;
+                self.clock
+                    .pin_elapsed(Instant::now(), Duration::from_secs_f32(settled.max(0.0)));
                 let frames = self.frames.clone();
                 let ctx = ctx.clone();
                 std::thread::spawn(move || {
@@ -175,33 +176,27 @@ impl eframe::App for App {
                 ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                 return;
             } else if id == self.menu_ids.pause {
-                self.paused = !self.paused;
-                // Reset the timer so resuming gives a full interval rather
-                // than instantly advancing on leftover elapsed time.
-                self.last_show = Instant::now();
+                self.clock.toggle_pause(Instant::now());
             } else if id == self.menu_ids.next {
                 self.advance();
             }
         }
 
-        if !self.paused && self.last_show.elapsed() >= self.word_interval {
+        let now = Instant::now();
+        if self.clock.is_due(now) {
             self.advance();
         }
 
-        let elapsed = self
-            .shown_at
-            .map(|t| t.elapsed().as_secs_f32())
-            .unwrap_or(0.0);
+        let now = Instant::now();
+        let elapsed = self.clock.elapsed(now).as_secs_f32();
 
         // Seconds until the next word, and the whole-card opacity for the exit
         // fade as the swap approaches (1.0 = fully shown, no fade by default).
-        let exit_window = timing::exit_window(&self.cfg, self.word_interval);
-        let until_next = self.word_interval.saturating_sub(self.last_show.elapsed());
-        let exit_alpha = timing::exit_alpha(
-            until_next.as_secs_f32(),
-            exit_window.as_secs_f32(),
-            self.paused,
-        );
+        let exit_window = timing::exit_window(&self.cfg, self.clock.word_interval());
+        let until_next = self.clock.until_next(now);
+        let paused = self.clock.is_paused();
+        let exit_alpha =
+            timing::exit_alpha(until_next.as_secs_f32(), exit_window.as_secs_f32(), paused);
         let accent = self
             .cfg
             .accent_color
@@ -216,23 +211,29 @@ impl eframe::App for App {
         if let Some(w) = self.deck.current() {
             has_example = !w.example.trim().is_empty();
             let view = CardView {
-                word: &w.word,
-                transcription: &w.transcription,
-                translation: &w.translation,
-                example: &w.example,
-                elapsed,
+                content: CardContent {
+                    word: &w.word,
+                    transcription: &w.transcription,
+                    translation: &w.translation,
+                    example: &w.example,
+                },
+                timeline: CardTimeline {
+                    elapsed,
+                    transcription_delay: self.cfg.transcription_delay,
+                    translation_delay,
+                    example_delay,
+                    fade_duration: self.cfg.fade_duration,
+                },
+                style: CardStyle {
+                    corner: self.cfg.corner,
+                    card_opacity: self.cfg.card_opacity,
+                    corner_radius: self.cfg.corner_radius,
+                    exit_alpha,
+                    settle_px: self.cfg.settle_px,
+                    accent,
+                    sheen: self.cfg.sheen,
+                },
                 prev_width: self.prev_width,
-                transcription_delay: self.cfg.transcription_delay,
-                translation_delay,
-                example_delay,
-                fade_duration: self.cfg.fade_duration,
-                corner: self.cfg.corner,
-                card_opacity: self.cfg.card_opacity,
-                corner_radius: self.cfg.corner_radius,
-                exit_alpha,
-                settle_px: self.cfg.settle_px,
-                accent,
-                sheen: self.cfg.sheen,
             };
             let widget_w = view.compute_width(ui);
             view.paint(ui, widget_w);
@@ -249,7 +250,7 @@ impl eframe::App for App {
         ctx.request_repaint_after(timing::repaint_after(
             elapsed,
             anim_end,
-            self.paused,
+            paused,
             until_next,
             exit_window,
             ANIM_FRAME,
