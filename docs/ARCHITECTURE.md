@@ -35,6 +35,7 @@ main.rs (composition root)
   |-- tray.rs / muda IDs
   `-- app.rs (eframe adapter)
        |-- session.rs
+       |-- wake.rs (owned long-deadline worker)
        |-- timing.rs facade
        |     |-- timing/easing.rs
        |     |-- timing/pacing.rs
@@ -68,16 +69,17 @@ step can be understood without reading the later ones.
 | 6 | `src/timing/pacing.rs` | How does rarity change dwell time? |
 | 7 | `src/timing/timeline.rs` | When do lines reveal and exit? |
 | 8 | `src/timing/repaint.rs` | When should the UI request another frame? |
-| 9 | `src/config.rs` | Which four configuration contracts exist? |
-| 10 | `src/config/parser.rs` | How are 20 keys validated and clamped? |
-| 11 | `src/theme.rs` | Which semantic tokens define the card? |
-| 12 | `src/ui/text.rs` | How are lines measured, fitted, and painted? |
-| 13 | `src/ui/surface.rs` | How is the optional surface sheen drawn? |
-| 14 | `src/ui/card.rs` | How are content, timeline, and style composed? |
-| 15 | `src/source.rs` | How are Mongo/static/fallback sources adapted? |
-| 16 | `src/platform.rs` | How is speech isolated from the app? |
-| 17 | `src/app.rs` | How are commands, timing, deck, and render joined per frame? |
-| 18 | `src/main.rs` | Which concrete adapters are wired at startup? |
+| 9 | `src/wake.rs` | How does a long idle deadline wake eframe exactly once? |
+| 10 | `src/config.rs` | Which four configuration contracts exist? |
+| 11 | `src/config/parser.rs` | How are 20 keys validated and clamped? |
+| 12 | `src/theme.rs` | Which semantic tokens define the card? |
+| 13 | `src/ui/text.rs` | How are lines measured, fitted, and painted? |
+| 14 | `src/ui/surface.rs` | How is the optional surface sheen drawn? |
+| 15 | `src/ui/card.rs` | How are content, timeline, and style composed? |
+| 16 | `src/source.rs` | How are Mongo/static/fallback sources adapted? |
+| 17 | `src/platform.rs` | How is speech isolated from the app? |
+| 18 | `src/app.rs` | How are commands, timing, deck, and render joined per frame? |
+| 19 | `src/main.rs` | Which concrete adapters are wired at startup? |
 
 ## Module responsibilities
 
@@ -157,6 +159,7 @@ smaller.
 | `fallback.rs` | Built-in offline records. |
 | `platform.rs` | `Speaker` port with macOS and null adapters. |
 | `tray.rs` | Procedural tray icon pixels. |
+| `wake.rs` | Owned/cancellable worker for long repaint deadlines. |
 | `app.rs` | eframe lifecycle, menu polling, deck advance, render orchestration. |
 | `main.rs` | Choose concrete source/speaker, construct tray/window, run eframe. |
 
@@ -185,7 +188,9 @@ Audit items #3 and #101-109 define the fallback-first target design.
 3. `timing` derives reveal delays, exit window, and repaint sleep.
 4. `Theme` and config create `CardContent`, `CardTimeline`, and `CardStyle`.
 5. `CardView` measures once for width, paints surface/content, and returns.
-6. `timing::repaint_after` schedules the next event; settled content sleeps.
+6. `timing::repaint_after` chooses the delay; 16ms animation stays in egui,
+   while `WakeScheduler` owns long idle/exit/pause deadlines independently of
+   eframe pass invalidation.
 
 ### Pause invariant
 
@@ -220,7 +225,7 @@ scattered `eprintln!`. These are tracked as #76-80, #363-364, and #326-338.
 
 ## Verification
 
-The current suite has 58 unit tests covering config groups/parser, deck/selector,
+The current suite has 63 unit tests covering config groups/parser, deck/selector,
 session pause semantics, timing modules, themes, and text helpers. The standard
 local gate is:
 

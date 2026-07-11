@@ -57,8 +57,11 @@ fn parser_accepts_hash_and_bare_accent_colors() {
 
 #[test]
 fn parser_ignores_unknown_and_malformed_values() {
-    let cfg = Config::default()
-        .merge_str("# comment\nunknown=9\ninterval_secs=nope\ncard_opacity=nan\nfont_scale=inf");
+    let mut initial = Config::default();
+    initial.learning.speak = true;
+    let cfg = initial.merge_str(
+        "# comment\nunknown=9\ninterval_secs=nope\ncard_opacity=nan\nfont_scale=inf\nspeak=maybe",
+    );
     let default = Config::default();
     assert_eq!(cfg.timing.interval_secs, default.timing.interval_secs);
     assert_eq!(cfg.appearance.card_opacity, default.appearance.card_opacity);
@@ -66,6 +69,19 @@ fn parser_ignores_unknown_and_malformed_values() {
         cfg.accessibility.font_scale,
         default.accessibility.font_scale
     );
+    assert!(cfg.learning.speak, "invalid bool must keep the prior value");
+}
+
+#[test]
+fn parser_accepts_explicit_false_boolean_tokens() {
+    let mut initial = Config::default();
+    initial.learning.speak = true;
+    initial.learning.recall_mode = true;
+    initial.accessibility.reduce_motion = true;
+    let cfg = initial.merge_str("speak=off\nrecall_mode=no\nreduce_motion=0");
+    assert!(!cfg.learning.speak);
+    assert!(!cfg.learning.recall_mode);
+    assert!(!cfg.accessibility.reduce_motion);
 }
 
 #[test]

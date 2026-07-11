@@ -5,6 +5,7 @@ use crate::session::SessionClock;
 use crate::theme::Theme;
 use crate::timing;
 use crate::ui::{CardContent, CardStyle, CardTimeline, CardView};
+use crate::wake::WakeScheduler;
 use eframe::egui;
 use muda::MenuEvent;
 use rand::RngExt;
@@ -20,6 +21,7 @@ const ANIM_FRAME: Duration = Duration::from_millis(16);
 
 // Idle window measured by the frame-counter benchmark (MEMO_BENCH=1).
 const BENCH_SECS: u64 = 10;
+const BENCH_WARMUP_SECS: u64 = 2;
 
 #[derive(Clone)]
 pub struct MenuIds {
@@ -36,6 +38,7 @@ pub struct App {
     clock: SessionClock,
     prev_width: f32,
     theme: Theme,
+    wake_scheduler: Option<WakeScheduler>,
     started: bool,
     menu_ids: MenuIds,
     menu_tx: Option<Sender<muda::MenuId>>,
@@ -58,6 +61,7 @@ impl App {
             clock: SessionClock::new(now, Duration::from_secs(cfg.timing.interval_secs)),
             prev_width: theme.metrics.min_width,
             theme,
+            wake_scheduler: None,
             started: false,
             menu_ids,
             menu_tx: Some(menu_tx),
@@ -72,6 +76,9 @@ impl App {
     /// Show the next word: advance the deck, reset the timers, roll a fresh
     /// interval, and speak it through the speaker port.
     fn advance(&mut self) {
+        if let Some(scheduler) = &mut self.wake_scheduler {
+            scheduler.cancel();
+        }
         self.deck.advance();
         // Roll the interval against the new word's frequency so rare-word dwell
         // (if enabled) can stretch harder words. Unknown/absent rank reads as
@@ -140,6 +147,9 @@ impl eframe::App for App {
         // exactly what this absolutely-positioned overlay wants. Grab a Context
         // handle for viewport commands, repaint scheduling, and threads.
         let ctx = ui.ctx().clone();
+        if self.wake_scheduler.is_none() {
+            self.wake_scheduler = Some(WakeScheduler::new(&ctx));
+        }
 
         if self.bench {
             self.frames.fetch_add(1, Ordering::Relaxed);
@@ -166,6 +176,10 @@ impl eframe::App for App {
                 let frames = self.frames.clone();
                 let ctx = ctx.clone();
                 std::thread::spawn(move || {
+                    // Exclude window creation, font upload, and initial viewport
+                    // settling from the idle measurement.
+                    std::thread::sleep(Duration::from_secs(BENCH_WARMUP_SECS));
+                    frames.store(0, Ordering::Relaxed);
                     std::thread::sleep(Duration::from_secs(BENCH_SECS));
                     let n = frames.load(Ordering::Relaxed);
                     eprintln!("BENCH frames={n} fps={:.2}", n as f64 / BENCH_SECS as f64);
@@ -181,6 +195,9 @@ impl eframe::App for App {
                 return;
             } else if id == self.menu_ids.pause {
                 self.clock.toggle_pause(Instant::now());
+                if let Some(scheduler) = &mut self.wake_scheduler {
+                    scheduler.cancel();
+                }
             } else if id == self.menu_ids.next {
                 self.advance();
             }
@@ -258,14 +275,22 @@ impl eframe::App for App {
         // no frames). The decision is a pure function in `timing` so it can be
         // tested without egui; here we just apply it.
         let anim_end = timing::anim_end(&self.cfg, has_example);
-        ctx.request_repaint_after(timing::repaint_after(
+        let repaint_after = timing::repaint_after(
             elapsed,
             anim_end,
             paused,
             until_next,
             exit_window,
             ANIM_FRAME,
-        ));
+        );
+        if repaint_after <= ANIM_FRAME {
+            if let Some(scheduler) = &mut self.wake_scheduler {
+                scheduler.cancel();
+            }
+            ctx.request_repaint_after(repaint_after);
+        } else if let Some(scheduler) = &mut self.wake_scheduler {
+            scheduler.schedule(now, repaint_after, ANIM_FRAME.saturating_mul(2));
+        }
     }
 }
 

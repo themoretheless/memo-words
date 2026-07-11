@@ -78,9 +78,15 @@ impl Theme {
             theme.border = with_alpha(theme.border, theme.border.a().max(72));
             theme.text = TextPalette {
                 word: with_alpha(theme.text.word, 255),
-                translation: with_alpha(theme.text.translation, 245),
-                transcription: with_alpha(theme.text.transcription, 215),
-                example: with_alpha(theme.text.example, 195),
+                translation: with_alpha(
+                    theme.text.translation,
+                    theme.text.translation.a().max(245),
+                ),
+                transcription: with_alpha(
+                    theme.text.transcription,
+                    theme.text.transcription.a().max(215),
+                ),
+                example: with_alpha(theme.text.example, theme.text.example.a().max(195)),
             };
         }
 
@@ -258,6 +264,18 @@ mod tests {
         let theme = Theme::from_config(&cfg);
         assert!(theme.card_background(0.1).a() >= 209);
         assert!(theme.text.transcription.a() >= 215);
+    }
+
+    #[test]
+    fn enhanced_contrast_never_dims_an_already_stronger_preset() {
+        let mut cfg = Config::default();
+        cfg.appearance.theme = ThemePreset::HighContrast;
+        let normal = Theme::from_config(&cfg);
+        cfg.accessibility.enhanced_contrast = true;
+        let enhanced = Theme::from_config(&cfg);
+        assert!(enhanced.text.translation.a() >= normal.text.translation.a());
+        assert!(enhanced.text.transcription.a() >= normal.text.transcription.a());
+        assert!(enhanced.text.example.a() >= normal.text.example.a());
     }
 
     #[test]

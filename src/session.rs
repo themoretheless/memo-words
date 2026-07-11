@@ -26,6 +26,11 @@ impl SessionClock {
         self.shown_at = Some(now);
         self.last_show = now;
         self.word_interval = word_interval;
+        // `Next` is allowed while paused. Rebase the pause anchor so resuming
+        // shifts this new word only by time paused after it appeared.
+        if self.is_paused() {
+            self.paused_at = Some(now);
+        }
     }
 
     pub fn toggle_pause(&mut self, now: Instant) {
@@ -33,7 +38,7 @@ impl SessionClock {
             let paused_for = now.saturating_duration_since(started);
             self.shown_at = self
                 .shown_at
-                .and_then(|shown| shown.checked_add(paused_for));
+                .map(|shown| shown.checked_add(paused_for).unwrap_or(now));
             self.last_show = self.last_show.checked_add(paused_for).unwrap_or(now);
         } else {
             self.paused_at = Some(now);
@@ -108,5 +113,29 @@ mod tests {
         clock.start_word(t0, Duration::from_secs(2));
         assert!(!clock.is_due(t0 + Duration::from_secs(1)));
         assert!(clock.is_due(t0 + Duration::from_secs(2)));
+    }
+
+    #[test]
+    fn next_while_paused_rebases_the_frozen_word() {
+        let t0 = Instant::now();
+        let mut clock = SessionClock::new(t0, Duration::from_secs(30));
+        clock.start_word(t0, Duration::from_secs(30));
+        clock.toggle_pause(t0 + Duration::from_secs(4));
+
+        let next = t0 + Duration::from_secs(10);
+        clock.start_word(next, Duration::from_secs(30));
+        assert!(clock.is_paused());
+        assert_eq!(clock.elapsed(next + Duration::from_secs(8)), Duration::ZERO);
+
+        let resume = t0 + Duration::from_secs(20);
+        clock.toggle_pause(resume);
+        assert_eq!(
+            clock.elapsed(resume + Duration::from_secs(1)),
+            Duration::from_secs(1)
+        );
+        assert_eq!(
+            clock.until_next(resume + Duration::from_secs(1)),
+            Duration::from_secs(29)
+        );
     }
 }

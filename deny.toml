@@ -23,6 +23,13 @@ ignore = [
     "RUSTSEC-2024-0420", # gtk-sys -- GTK3 bindings, unmaintained (Linux only)
     "RUSTSEC-2024-0419", # gtk3-macros -- GTK3 bindings, unmaintained (Linux only)
     "RUSTSEC-2024-0370", # proc-macro-error -- unmaintained (transitive)
+    # quick-xml 0.39 is pulled only by wayland-scanner (Linux-only, not built by
+    # this macOS app). wayland-scanner 0.31.10 requires quick-xml ^0.39 and no
+    # compatible release using patched >=0.41 exists as of 2026-07-11. The
+    # scanner parses trusted bundled Wayland protocol XML at build time, not
+    # attacker-controlled runtime input. Remove these as soon as upstream moves.
+    "RUSTSEC-2026-0194",
+    "RUSTSEC-2026-0195",
 ]
 
 [bans]

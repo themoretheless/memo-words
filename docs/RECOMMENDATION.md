@@ -272,7 +272,7 @@ observed **Problem/Risk** from an **Improvement/Idea**.
 | 191 | P2 | Risk | Width transition duration is a fixed design token. | Keep it theme-owned but expose tested preset values if needed. |
 | 192 | P2 | Improvement | Session duration and exposure count are not tracked. | Add local session summaries once persistence exists. |
 | 193 | P2 | Improvement | Quiet hours cannot defer due reviews gracefully. | Resume with a bounded catch-up policy rather than a burst. |
-| 194 | P2 | Risk | Benchmark duration is hard-coded and startup frames affect the count. | Add warm-up and configurable measurement windows. |
+| 194 | P2 | Risk | Benchmark warm-up and measurement durations are hard-coded. | Make both explicit options and include them in structured output. |
 | 195 | P2 | Improvement | Benchmark output lacks elapsed milliseconds and configuration identity. | Emit a structured one-line report. |
 | 196 | P2 | Risk | `Instant` transitions are tested but App still calls `Instant::now()` directly. | Inject a clock into orchestration tests. |
 | 197 | P3 | Idea | Different card types cannot have different reveal choreography. | Make timeline policy depend on prompt type. |
@@ -416,7 +416,7 @@ observed **Problem/Risk** from an **Improvement/Idea**.
 | 310 | P1 | Risk | Example text is trimmed/truncated into a new `String` repeatedly. | Precompute rendered card content on word change. |
 | 311 | P1 | Improvement | Card width recomputes all line measurements every animated frame. | Cache target widths and interpolate numeric stages. |
 | 312 | P1 | Improvement | Theme/layout values are copied and recomputed only once, but this is implicit. | Keep a documented immutable render spec per config revision. |
-| 313 | P2 | Risk | Benchmark includes startup and shutdown frames. | Separate warm-up, settled measurement, and teardown. |
+| 313 | P2 | Risk | Benchmark has a warm-up but reports no per-second distribution or wake reason. | Report measurement metadata and optional wake diagnostics. |
 | 314 | P2 | Problem | Benchmark has no automated pass/fail threshold. | Store a conservative baseline and alert on large regressions. |
 | 315 | P2 | Improvement | No frame-time histogram is available during animation. | Add opt-in developer timing counters. |
 | 316 | P2 | Improvement | CPU, GPU, memory, wakeups, and battery are not profiled together. | Define a release performance checklist using macOS Instruments. |
@@ -514,7 +514,7 @@ observed **Problem/Risk** from an **Improvement/Idea**.
 | 393 | P2 | Improvement | Scheduler distribution tests can be flaky without fixed RNG seeds. | Inject deterministic RNG everywhere under test. |
 | 394 | P2 | Risk | Thread/process shutdown is untested. | Add bounded lifecycle tests with fake workers. |
 | 395 | P2 | Improvement | No mutation testing estimates assertion strength. | Run targeted mutation checks on parser/timing/deck modules. |
-| 396 | P2 | Improvement | Documentation links/counts are not verified. | Add Markdown link checks and exact 500-row assertion. |
+| 396 | P2 | Improvement | CI verifies audit/config counts but not Markdown link targets. | Add a local-link checker to the existing documentation invariant step. |
 | 397 | P2 | Improvement | Test count dropped during refactor without a coverage metric. | Track behavior coverage/critical cases rather than raw count alone. |
 | 398 | P2 | Risk | CI covers only the latest macOS runner. | Add a small supported-version matrix where practical. |
 | 399 | P3 | Idea | No manual exploratory checklist covers Spaces/Stage Manager/Focus. | Maintain a release QA matrix for platform behaviors. |
@@ -573,7 +573,7 @@ observed **Problem/Risk** from an **Improvement/Idea**.
 | 442 | P2 | Risk | Build scripts manually assemble the app bundle. | Evaluate cargo-bundle/cargo-dist while preserving explicit control. |
 | 443 | P2 | Improvement | Offline/minimal builds are unavailable. | Feature-gate MongoDB/Tokio and test both feature sets. |
 | 444 | P2 | Risk | `cargo deny` does not check licenses in CI. | Enable a maintained allow-list or equivalent report. |
-| 445 | P2 | Improvement | CI does not validate Markdown links/audit counts. | Add docs verification to the check job. |
+| 445 | P2 | Improvement | CI validates audit counts and aliases, but not every Markdown link target. | Extend the documentation check with local-link validation. |
 | 446 | P2 | Risk | Cache keys do not include the pinned toolchain because none exists. | Include toolchain and target dimensions. |
 | 447 | P2 | Improvement | No changelog consistency check ensures current version sections. | Add release metadata validation. |
 | 448 | P3 | Idea | There is no provenance attestation for artifacts. | Add GitHub artifact attestations/SLSA metadata. |
@@ -591,7 +591,7 @@ observed **Problem/Risk** from an **Improvement/Idea**.
 | 455 | P1 | Problem | There is no privacy/security overview. | Add concise user-facing data-flow and reporting docs. |
 | 456 | P1 | Improvement | Architecture has no decision records. | Add ADRs for click-through overlay, source fallback, timing, storage, and themes. |
 | 457 | P1 | Risk | Root alias files can look like independent editable documents. | Keep explicit canonical pointers and verify them in CI. |
-| 458 | P1 | Improvement | The 500-item register is too large to act on without slices. | Maintain a small current milestone/top-next section derived from it. |
+| 458 | P1 | Improvement | The register has a best-next list but no owned current milestone/WIP slice. | Derive a small active milestone with owner and outcome from the 500 items. |
 | 459 | P1 | Improvement | Modules have no consistent "why/read next" rustdoc. | Add short responsibility/dependency comments at facades. |
 | 460 | P1 | Improvement | No diagram shows source -> deck -> app -> timeline -> card flow. | Keep one small architecture diagram synced with modules. |
 | 461 | P2 | Problem | There is no `CONTRIBUTING.md`. | Document issue/branch/test/PR expectations. |

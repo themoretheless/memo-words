@@ -160,7 +160,7 @@ speak = true
 ## Documentation
 
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) - SOLID/DRY module map,
-  dependency direction, runtime flow, and an 18-step small-piece reading order.
+  dependency direction, runtime flow, and a 19-step small-piece reading order.
 - [`docs/RECOMMENDATION.md`](docs/RECOMMENDATION.md) - the canonical 500-item
   register: 20 product/engineering areas with 25 findings and actions each.
 - [`docs/DESIGN_IDEAS.md`](docs/DESIGN_IDEAS.md) - the running design backlog.
@@ -171,8 +171,8 @@ The canonical documents live in `docs/`.
 
 For a quick code tour, start with `model.rs`, `selector.rs`, `deck.rs`, and
 `session.rs`; then read the four small `timing/` modules, `theme.rs`, and the four
-`ui/` modules before opening `app.rs` and `main.rs`. The architecture document
-explains what question each file answers.
+`ui/` modules and `wake.rs` before opening `app.rs` and `main.rs`. The
+architecture document explains what question each file answers.
 
 ## License
 

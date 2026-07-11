@@ -38,10 +38,22 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `Info.plist` version synced to 0.2.0 (was 0.1.0).
 - Pause now freezes both reveal and interval clocks without idle animation;
   natural `accent_color = #rrggbb` values are accepted.
+- Corrected Next-while-paused clock rebasing, invalid boolean preservation, and
+  enhanced-contrast monotonicity across presets.
+- Moved long repaint deadlines to one owned/cancellable wake worker and excluded
+  startup warm-up frames from `MEMO_BENCH`; settled runtime smoke now reports
+  zero idle frames on the reviewed macOS host.
+
+### Security
+- Updated `crossbeam-epoch` to 0.9.20 for RUSTSEC-2026-0204; documented narrow
+  Linux-only `wayland-scanner` exceptions for two `quick-xml` advisories until
+  an upstream-compatible patched release exists.
 
 ### Docs
 - Added `docs/ARCHITECTURE.md` and `docs/RECOMMENDATION.md` (a critical audit),
   and synced the README config table (all keys) and Word schema.
+- Expanded the canonical audit to 500 actionable entries and added a CI check
+  for audit numbering, area count, README config keys, and root aliases.
 
 ## [0.2.0]
 

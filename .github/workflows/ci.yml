@@ -30,6 +30,9 @@ jobs:
       - name: Format
         run: cargo fmt --check
 
+      - name: Documentation invariants
+        run: bash scripts/verify_docs.sh
+
       - name: Clippy
         run: cargo clippy --all-targets -- -D warnings
 
@@ -50,9 +53,14 @@ jobs:
           tool: cargo-audit,cargo-deny
 
       # RustSec advisory scan of Cargo.lock. Vulnerabilities fail the build;
-      # unmaintained/unsound advisories are reported as warnings only.
+      # unmaintained/unsound advisories are reported as warnings only. The two
+      # quick-xml exceptions are Linux-only wayland-scanner build dependencies;
+      # see the matching, fully documented deny.toml entries.
       - name: Audit (RustSec advisories)
-        run: cargo audit
+        run: >-
+          cargo audit
+          --ignore RUSTSEC-2026-0194
+          --ignore RUSTSEC-2026-0195
 
       # Supply-chain policy from deny.toml: advisories (with documented
       # ignores), banned/wildcard crates, and trusted sources. Lockfile-only,

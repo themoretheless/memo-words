@@ -60,8 +60,8 @@ fn apply(cfg: &mut Config, key: &str, value: &str) {
         }
         "sheen" => set_f32(value, 0.0, 1.0, &mut cfg.appearance.sheen),
         "theme" => set_parsed(ThemePreset::parse(value), &mut cfg.appearance.theme),
-        "speak" => cfg.learning.speak = parse_bool(value),
-        "recall_mode" => cfg.learning.recall_mode = parse_bool(value),
+        "speak" => set_parsed(parse_bool(value), &mut cfg.learning.speak),
+        "recall_mode" => set_parsed(parse_bool(value), &mut cfg.learning.recall_mode),
         "recap_chance" => set_f32(value, 0.0, 1.0, &mut cfg.learning.recap_chance),
         "font_scale" => set_f32(
             value,
@@ -69,17 +69,20 @@ fn apply(cfg: &mut Config, key: &str, value: &str) {
             MAX_FONT_SCALE,
             &mut cfg.accessibility.font_scale,
         ),
-        "enhanced_contrast" => cfg.accessibility.enhanced_contrast = parse_bool(value),
-        "reduce_motion" => cfg.accessibility.reduce_motion = parse_bool(value),
+        "enhanced_contrast" => {
+            set_parsed(parse_bool(value), &mut cfg.accessibility.enhanced_contrast)
+        }
+        "reduce_motion" => set_parsed(parse_bool(value), &mut cfg.accessibility.reduce_motion),
         _ => {}
     }
 }
 
-fn parse_bool(value: &str) -> bool {
-    matches!(
-        value.to_ascii_lowercase().as_str(),
-        "true" | "1" | "yes" | "on"
-    )
+fn parse_bool(value: &str) -> Option<bool> {
+    match value.to_ascii_lowercase().as_str() {
+        "true" | "1" | "yes" | "on" => Some(true),
+        "false" | "0" | "no" | "off" => Some(false),
+        _ => None,
+    }
 }
 
 fn parse_hex_color(value: &str) -> Option<[u8; 3]> {

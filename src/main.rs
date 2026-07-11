@@ -11,6 +11,7 @@ mod theme;
 mod timing;
 mod tray;
 mod ui;
+mod wake;
 
 use deck::Deck;
 use model::Word;

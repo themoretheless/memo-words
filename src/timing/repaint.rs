@@ -55,7 +55,7 @@ mod tests {
 
     #[test]
     fn pause_sleeps_even_when_animation_was_in_progress() {
-        let d = repaint_after(
+        let delay = repaint_after(
             1.0,
             11.0,
             true,
@@ -63,7 +63,7 @@ mod tests {
             Duration::ZERO,
             FRAME,
         );
-        assert!(d >= Duration::from_secs(3600));
+        assert!(delay >= Duration::from_secs(3600));
     }
 
     #[test]

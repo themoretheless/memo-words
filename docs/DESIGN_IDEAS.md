@@ -123,7 +123,7 @@ defaults without pixel checks. Ordered by value-to-effort.
 | # | Idea | Inspired by | Viability | Effort | Value |
 |---|------|-------------|-----------|--------|-------|
 | 1 | **Focus/DND auto-pause** - pause rotation while macOS Focus/Do-Not-Disturb or a fullscreen app is active; resume after. `respect_dnd` (default on) | macOS Focus modes | config-only | M | High |
-| 2 | **Idle-repaint abort gate** - after the card settles, stop requesting repaints entirely until the next state change; tightens the zero-idle invariant | VS Code idle timer | ready | S | High |
+| 2 | **Idle-repaint abort gate** - an owned wake worker now schedules long deadlines without repeated egui callbacks; reviewed release smoke reports 0.00 settled FPS | VS Code idle timer | shipped | S | High |
 | 3 | **Font scale knob** - `font_scale` (0.8..1.5) scales type, spacing, width limits, and card height together | Raycast text size | shipped | S | High |
 | 4 | **Difficulty-aware dwell** - rare words hold longer, common words pass quicker; `contextual_jitter` (default off) | Duolingo spacing | ready | M | High |
 | 5 | **Entrance easing presets** - `entrance_curve` (spring / ease-in-out / linear / smooth) as pure preset functions, no extra idle cost | Framer motion | config-only | M | High |
@@ -144,7 +144,7 @@ disk state layer first; **cosmetic** = works but near-zero learning value.
 | # | Idea | Viability | Eff | Val |
 |---|------|-----------|-----|-----|
 | 1 | Focus/DND auto-pause | config | M | High |
-| 2 | Idle-repaint abort gate | ready | S | High |
+| 2 | Idle-repaint abort gate | shipped | S | High |
 | 3 | Font scale knob | shipped | S | High |
 | 4 | Difficulty-aware dwell | ready | M | High |
 | 5 | Entrance easing presets | config | M | High |
