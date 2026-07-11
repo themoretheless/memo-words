@@ -25,16 +25,7 @@ pub struct Deck {
 
 impl Deck {
     pub fn new(words: Vec<Word>, selector: Box<dyn WordSelector>) -> Self {
-        // Window sized to ~a third of the deck, capped so large decks stay
-        // varied. For 2+ words keep at least 1 in the window so the same word
-        // never repeats back-to-back, but never the whole deck (always leave at
-        // least one candidate). A 0- or 1-word deck can't avoid repeats, so its
-        // window is 0.
-        let recent_cap = if words.len() <= 1 {
-            0
-        } else {
-            (words.len() / 3).clamp(1, (words.len() - 1).min(100))
-        };
+        let recent_cap = recent_capacity(words.len());
         Self {
             words,
             selector,
@@ -55,6 +46,21 @@ impl Deck {
 
     pub fn current(&self) -> Option<&Word> {
         self.current.map(|i| &self.words[i])
+    }
+
+    /// Replace the backing deck without replacing its selection or recap
+    /// policies. Empty results are rejected so a failed remote refresh cannot
+    /// erase the usable fallback deck.
+    pub fn replace_words(&mut self, words: Vec<Word>) -> bool {
+        if words.is_empty() {
+            return false;
+        }
+        self.words = words;
+        self.recent.clear();
+        self.recent_set.clear();
+        self.recent_cap = recent_capacity(self.words.len());
+        self.current = None;
+        true
     }
 
     /// Advance to the next word. Usually a fresh pick via the strategy (excluding
@@ -109,6 +115,16 @@ impl Deck {
         } else {
             false
         }
+    }
+}
+
+/// Window sized to roughly a third of the deck and capped for large decks. For
+/// 2+ words it keeps at least one recent item but always leaves a candidate.
+fn recent_capacity(word_count: usize) -> usize {
+    if word_count <= 1 {
+        0
+    } else {
+        (word_count / 3).clamp(1, (word_count - 1).min(100))
     }
 }
 
@@ -191,6 +207,39 @@ mod tests {
             d.advance();
             assert!(d.current().is_some());
         }
+    }
+
+    #[test]
+    fn replacement_resets_current_and_history_before_using_new_words() {
+        let mut d = deck(30);
+        for _ in 0..10 {
+            d.advance();
+        }
+        let replacement = vec![Word {
+            word: "remote".into(),
+            transcription: String::new(),
+            translation: String::new(),
+            frequency: 1,
+            example: String::new(),
+        }];
+
+        assert!(d.replace_words(replacement));
+        assert!(d.current().is_none());
+        assert!(d.recent.is_empty());
+        assert!(d.recent_set.is_empty());
+        assert_eq!(d.recent_cap, 0);
+
+        d.advance();
+        assert_eq!(d.current().unwrap().word, "remote");
+    }
+
+    #[test]
+    fn empty_replacement_preserves_the_usable_deck() {
+        let mut d = deck(1);
+        d.advance();
+
+        assert!(!d.replace_words(Vec::new()));
+        assert_eq!(d.current().unwrap().word, "w0");
     }
 
     #[test]

@@ -28,12 +28,18 @@ or macOS subprocesses.
 
 ```text
 main.rs (composition root)
-  |-- source.rs + fallback.rs ----> model.rs
-  |              |
-  |              +---------------> deck.rs ----> selector.rs
+  |-- fallback.rs ----------------> model.rs
+  |-- source.rs facade
+  |     |-- source/report.rs -----> model.rs
+  |     |-- source/static_source.rs -> model.rs
+  |     `-- source/mongo.rs ------> model.rs + mongodb
+  |-- loading.rs -----------------> source.rs
+  |-- deck.rs --------------------> model.rs + selector.rs
   |-- platform.rs (Speaker)
   |-- tray.rs / muda IDs
   `-- app.rs (eframe adapter)
+       |-- deck.rs
+       |-- source.rs (LoadReport handoff)
        |-- session.rs
        |-- wake.rs (owned long-deadline worker)
        |-- timing.rs facade
@@ -72,14 +78,21 @@ step can be understood without reading the later ones.
 | 9 | `src/wake.rs` | How does a long idle deadline wake eframe exactly once? |
 | 10 | `src/config.rs` | Which four configuration contracts exist? |
 | 11 | `src/config/parser.rs` | How are 20 keys validated and clamped? |
-| 12 | `src/theme.rs` | Which semantic tokens define the card? |
-| 13 | `src/ui/text.rs` | How are lines measured, fitted, and painted? |
-| 14 | `src/ui/surface.rs` | How is the optional surface sheen drawn? |
-| 15 | `src/ui/card.rs` | How are content, timeline, and style composed? |
-| 16 | `src/source.rs` | How are Mongo/static/fallback sources adapted? |
-| 17 | `src/platform.rs` | How is speech isolated from the app? |
-| 18 | `src/app.rs` | How are commands, timing, deck, and render joined per frame? |
-| 19 | `src/main.rs` | Which concrete adapters are wired at startup? |
+| 12 | `src/config/path.rs` | Where is configuration found and read? |
+| 13 | `src/theme.rs` | Which semantic tokens define the card? |
+| 14 | `src/ui/foundation.rs` | How are transparent visuals and fonts registered? |
+| 15 | `src/ui/text.rs` | How are lines measured, fitted, and painted? |
+| 16 | `src/ui/surface.rs` | How is the optional surface sheen drawn? |
+| 17 | `src/ui/card.rs` | How are content, timeline, and style composed? |
+| 18 | `src/source/report.rs` | How are source outcomes, issues, and fallback represented? |
+| 19 | `src/source/static_source.rs` | What is the deterministic in-memory adapter? |
+| 20 | `src/source/mongo.rs` | How are Mongo rows mapped into a typed report? |
+| 21 | `src/fallback.rs` | Which records guarantee offline startup? |
+| 22 | `src/source.rs` | How are source contracts and fallback policy composed? |
+| 23 | `src/loading.rs` | How does synchronous source work leave the UI thread? |
+| 24 | `src/platform.rs` | How is speech isolated from the app? |
+| 25 | `src/app.rs` | How are source handoff, commands, timing, deck, and render joined? |
+| 26 | `src/main.rs` | Which concrete adapters are wired at startup? |
 
 ## Module responsibilities
 
@@ -155,40 +168,50 @@ smaller.
 
 | Module | One responsibility today |
 |---|---|
-| `source.rs` | `WordSource`, Mongo/static implementations, fallback decorator. |
+| `source/report.rs` | Typed outcome, issue, active-source, count, and fallback metadata. |
+| `source/static_source.rs` | Deterministic in-memory source for tests and benchmarks. |
+| `source/mongo.rs` | Mongo query/cursor/decode mapping and bounded diagnostics. |
+| `source.rs` | Stable `WordSource` facade and fallback decorator. |
 | `fallback.rs` | Built-in offline records. |
+| `loading.rs` | One-shot background source execution and completion notification. |
 | `platform.rs` | `Speaker` port with macOS and null adapters. |
 | `tray.rs` | Procedural tray icon pixels. |
 | `wake.rs` | Owned/cancellable worker for long repaint deadlines. |
 | `app.rs` | eframe lifecycle, menu polling, deck advance, render orchestration. |
 | `main.rs` | Choose concrete source/speaker, construct tray/window, run eframe. |
 
-The 500-item audit intentionally calls out the remaining adapter debt: source
-errors collapse to an empty vector, platform path/font/display logic is still
-scattered, `App` still sees raw muda IDs and creates RNG/time directly, and
-tray/worker lifecycles are not owned explicitly.
+The 500-item audit intentionally calls out the remaining adapter debt:
+`LoadReport` is logged but not retained as user-visible health state, source
+loading has no retry/cancellation lifecycle, platform path/font/display logic
+is still scattered, `App` still sees raw muda IDs and creates RNG/time directly,
+and tray/worker lifecycles are not owned explicitly.
 
 ## Runtime flow
 
 ### Startup
 
 1. `main` loads the grouped config.
-2. It chooses benchmark static data or Mongo wrapped in fallback.
-3. It builds `Deck` with `FrequencyWeighted` selection and recap policy.
-4. It creates tray/menu IDs and the full-screen transparent viewport.
+2. Normal mode immediately builds `Deck` from fallback words; benchmark mode
+   uses one deterministic static record and never starts Mongo.
+3. It creates tray/menu IDs and the full-screen transparent viewport.
+4. Inside eframe setup it starts `WithFallback<MongoWordSource>` through the
+   one-shot `loading` worker and gives `App` the report receiver.
 5. It selects `SystemSpeaker` or `NullSpeaker` and constructs `App`.
-
-Remote loading currently happens before step 4 and can delay the first frame.
-Audit items #3 and #101-109 define the fallback-first target design.
+6. The first `App` advance renders fallback without waiting for remote I/O.
+7. Worker completion requests one repaint. `App` logs the typed report and
+   queues usable remote words, or keeps fallback on empty/failure.
+8. The next normal timer/menu advance atomically resets deck history, installs
+   queued words, and starts the new card. The visible card never changes midway.
 
 ### Each frame
 
-1. `App` consumes menu events and converts them into state changes.
-2. `SessionClock` decides whether the current word is due to advance.
-3. `timing` derives reveal delays, exit window, and repaint sleep.
-4. `Theme` and config create `CardContent`, `CardTimeline`, and `CardStyle`.
-5. `CardView` measures once for width, paints surface/content, and returns.
-6. `timing::repaint_after` chooses the delay; 16ms animation stays in egui,
+1. `App` polls the one-shot source report after its initial fallback advance.
+2. It consumes menu events and converts them into state changes.
+3. `SessionClock` decides whether the current word is due to advance.
+4. `timing` derives reveal delays, exit window, and repaint sleep.
+5. `Theme` and config create `CardContent`, `CardTimeline`, and `CardStyle`.
+6. `CardView` measures once for width, paints surface/content, and returns.
+7. `timing::repaint_after` chooses the delay; 16ms animation stays in egui,
    while `WakeScheduler` owns long idle/exit/pause deadlines independently of
    eframe pass invalidation.
 
@@ -208,6 +231,8 @@ mid-fade frame cannot request 60 FPS forever.
   should not modify deck/application policy.
 - **Liskov substitution:** `NullSpeaker` and `StaticWordSource` let tests and
   benchmark mode replace OS/remote behavior without changing callers.
+- **Source boundary:** `WordSource` returns one typed `LoadReport`; `loading`
+  handles execution policy and `WithFallback` handles availability policy.
 - **Interface segregation:** config is grouped by timing/appearance/learning/
   accessibility; rendering receives content/timeline/style contracts.
 - **Dependency inversion:** `App` depends on `Speaker`; `Deck` depends on
@@ -221,22 +246,24 @@ mid-fade frame cannot request 60 FPS forever.
 
 Known DRY violations remain: fallback and seed content are duplicated; config
 metadata is repeated across parser/example/README; source/platform errors use
-scattered `eprintln!`. These are tracked as #76-80, #363-364, and #326-338.
+scattered `eprintln!`. These are tracked as #76-80, #363-364, and #338/#476.
 
 ## Verification
 
-The current suite has 63 unit tests covering config groups/parser, deck/selector,
-session pause semantics, timing modules, themes, and text helpers. The standard
+The current suite has 71 unit tests covering config groups/parser,
+deck/selector/replacement, session pause semantics, timing modules, themes,
+text helpers, typed source reports, and the background handoff. The standard
 local gate is:
 
 ```sh
 cargo fmt --check
-cargo clippy --all-targets -- -D warnings
-cargo test
+cargo clippy --locked --all-targets -- -D warnings
+cargo test --locked
 ```
 
-There are still no end-to-end app, visual snapshot, real Mongo adapter, bundle
-smoke, or CI performance tests. Audit items #376-400 define that missing layer.
+There are still no end-to-end app, visual snapshot, controlled Mongo adapter,
+bundle smoke, or CI performance tests. Audit items #376-400 define that missing
+layer.
 
 ## Audit relationship
 

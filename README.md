@@ -37,10 +37,14 @@ The app starts in the system tray with a small "W" icon.
 
 ## Words
 
-On startup the app tries MongoDB at `mongodb://localhost:27017`, reading the
-`words` collection of the `english_words` database. If MongoDB is unavailable
-or the collection is empty, it falls back to a small built-in set of common
-words, so it always works out of the box.
+The first card always comes from a small built-in set, so opening the window
+never waits for MongoDB. In the background the app tries
+`mongodb://localhost:27017`, reading the `words` collection of the
+`english_words` database. A usable remote deck is queued and takes over on the
+next normal word change, avoiding an abrupt mid-card swap. Partially readable
+data uses its valid rows and reports skipped records. If MongoDB is unavailable
+or yields no valid words, the typed report is written to stderr and the
+built-in deck remains active.
 
 Each word document has the shape:
 
@@ -160,7 +164,7 @@ speak = true
 ## Documentation
 
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) - SOLID/DRY module map,
-  dependency direction, runtime flow, and a 19-step small-piece reading order.
+  dependency direction, runtime flow, and a 26-step small-piece reading order.
 - [`docs/RECOMMENDATION.md`](docs/RECOMMENDATION.md) - the canonical 500-item
   register: 20 product/engineering areas with 25 findings and actions each.
 - [`docs/DESIGN_IDEAS.md`](docs/DESIGN_IDEAS.md) - the running design backlog.
@@ -170,9 +174,9 @@ Compatibility aliases are kept at the repository root for quick lookup:
 The canonical documents live in `docs/`.
 
 For a quick code tour, start with `model.rs`, `selector.rs`, `deck.rs`, and
-`session.rs`; then read the four small `timing/` modules, `theme.rs`, and the four
-`ui/` modules and `wake.rs` before opening `app.rs` and `main.rs`. The
-architecture document explains what question each file answers.
+`session.rs`; then read the small timing, config, UI, source, and loading
+modules before opening `app.rs` and `main.rs`. The architecture document
+explains what question each file answers.
 
 ## License
 

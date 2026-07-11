@@ -2,9 +2,9 @@
 
 This is the canonical, current audit for `memo-words`. It combines concrete
 defects, product gaps, maintainability risks, UX improvements, and future ideas.
-It was re-checked against the source after the three July 2026 passes that split
-session/timing/rendering responsibilities and added themes, text scaling,
-enhanced contrast, and reduced-motion behavior.
+It was re-checked against the source after the July 2026 passes that split
+session/timing/rendering/source responsibilities, added themes and accessibility
+behavior, and moved remote loading behind fallback-first startup.
 
 The list intentionally has one source of truth. `README.md`,
 `docs/ARCHITECTURE.md`, `architecture.md`, and `recommendation.md` summarize and
@@ -46,7 +46,7 @@ observed **Problem/Risk** from an **Improvement/Idea**.
 |---:|:---:|---|---|---|
 | 1 | P0 | Problem | Learning progress disappears when the process exits. | Add a versioned local progress store before deeper learning features. |
 | 2 | P0 | Problem | Recap is random in-memory resurfacing, not durable spaced repetition. | Persist due dates and route review selection through an SRS policy. |
-| 3 | P0 | Problem | MongoDB loading blocks before the first frame can appear. | Render the fallback deck immediately and load remote words on a worker. |
+| 3 | P0 | Risk | Fallback-first startup has no release gate proving a timely first visible card. | Add an app-bundle smoke assertion with a cold-start latency budget. |
 | 4 | P1 | Problem | Non-technical users must hand-edit a config file. | Add a small tray-opened preferences window with validation and save feedback. |
 | 5 | P1 | Problem | The product never explains whether MongoDB or fallback data is active. | Show source state, word count, and last load result in diagnostics/tray. |
 | 6 | P1 | Risk | A tray creation failure leaves a click-through overlay with no direct controls. | Provide a fallback hotkey or small non-overlay control window. |
@@ -164,16 +164,16 @@ observed **Problem/Risk** from an **Improvement/Idea**.
 
 | # | Pri | Kind | Finding | Recommended action |
 |---:|:---:|---|---|---|
-| 101 | P0 | Problem | `WordSource::load()` cannot return an error or diagnostics. | Return a typed `LoadResult` containing words, warnings, and source metadata. |
-| 102 | P0 | Problem | Mongo loading is synchronous at composition time. | Move remote loading behind an asynchronous worker and state transition. |
-| 103 | P1 | Risk | Mongo cursor advance errors can be collapsed into end-of-stream behavior. | Distinguish clean EOF, query failure, decode failure, and cancellation. |
-| 104 | P1 | Problem | Malformed Mongo records can be skipped without an aggregate report. | Count skipped rows and retain representative field errors. |
+| 101 | P0 | Problem | `LoadReport` has no elapsed time, attempt ID, or completion timestamp. | Add bounded attempt metadata so diagnostics can order and compare loads. |
+| 102 | P0 | Problem | The background source runner is one-shot and cannot express cancellation, retry, or progress. | Define an owned source-load lifecycle before adding reload controls. |
+| 103 | P1 | Risk | Mongo records are consumed without a deterministic sort or result bound. | Define stable ordering and a validated maximum deck size. |
+| 104 | P1 | Problem | Decode reporting keeps only three messages and no stable document identity. | Retain redacted record IDs/field paths plus aggregate counts. |
 | 105 | P1 | Problem | Mongo URI is hard-coded. | Support environment/config URI with redaction in diagnostics. |
 | 106 | P1 | Problem | Database name is hard-coded. | Add a validated `mongo_database` setting. |
 | 107 | P1 | Problem | Collection name is hard-coded. | Add a validated `mongo_collection` setting. |
 | 108 | P1 | Problem | Connection and selection timeouts are fixed in code. | Expose conservative bounded timeout settings. |
-| 109 | P1 | Risk | A failed primary source loses its reason when fallback succeeds. | Preserve fallback cause in `LoadReport` and diagnostics. |
-| 110 | P1 | Improvement | The app cannot reload words without restart. | Add an atomic deck replacement command with source status. |
+| 109 | P1 | Risk | The latest source report is discarded after logging and deck handoff. | Retain redacted source state for diagnostics and retry decisions. |
+| 110 | P1 | Improvement | The app cannot reload words without restart. | Trigger the existing atomic deck replacement through an owned retry command. |
 | 111 | P1 | Risk | Remote loading has no cancellation during quit or source change. | Pass a cancellation token through asynchronous loaders. |
 | 112 | P1 | Risk | Repeated failures have no retry/backoff policy. | Add bounded exponential backoff with manual Retry. |
 | 113 | P1 | Problem | There is no local JSON/CSV/TOML source adapter. | Implement a validated file source before adding more remote backends. |
@@ -434,7 +434,7 @@ observed **Problem/Risk** from an **Improvement/Idea**.
 
 | # | Pri | Kind | Finding | Recommended action |
 |---:|:---:|---|---|---|
-| 326 | P0 | Problem | Source errors are represented as an empty vector. | Introduce typed load failures and preserve fallback causes. |
+| 326 | P0 | Problem | A source worker panic/disconnect becomes generic stderr instead of a typed report. | Catch worker termination and deliver a structured internal failure outcome. |
 | 327 | P1 | Problem | Config read failure is indistinguishable from no config. | Return load status and show path/parse warnings. |
 | 328 | P1 | Problem | Unknown and malformed config values are silently ignored. | Preserve safe defaults but report line-numbered warnings. |
 | 329 | P1 | Risk | Theme/config cross-field inconsistencies are not validated. | Add a post-parse validation report with effective values. |
@@ -467,7 +467,7 @@ observed **Problem/Risk** from an **Improvement/Idea**.
 | 351 | P1 | Problem | `App` still owns menu polling, benchmark logic, screen setup, cadence, and rendering. | Extract application commands, benchmark adapter, and viewport controller. |
 | 352 | P1 | Problem | `main.rs` constructs tray menus procedurally. | Move tray creation into an adapter returning command IDs/handle. |
 | 353 | P1 | Problem | `platform.rs` contains only speech while paths/fonts/display logic is scattered. | Define narrow platform ports by capability. |
-| 354 | P1 | Problem | `WordSource` cannot express failure, cancellation, or metadata. | Replace `Vec<Word>` return with a typed result/report. |
+| 354 | P1 | Problem | `WordSource` expresses outcomes and metadata but has no cancellation contract. | Add a small cancellation/lifecycle port before supporting repeated loads. |
 | 355 | P1 | Risk | `App` depends directly on `muda::MenuId`. | Translate adapter events into a domain-neutral command enum. |
 | 356 | P1 | Risk | `App` creates randomness directly with `rand::rng()`. | Inject an interval-jitter policy or RNG facade. |
 | 357 | P1 | Risk | `App` calls `Instant::now()` directly despite a testable session clock. | Inject a clock at the orchestration boundary. |
@@ -616,7 +616,7 @@ observed **Problem/Risk** from an **Improvement/Idea**.
 |---:|:---:|---|---|---|
 | 476 | P1 | Problem | Logs are ad hoc `eprintln!` messages. | Add structured levels/context with no default file logging. |
 | 477 | P1 | Problem | Diagnostics cannot report effective config values. | Expose redacted parsed/effective settings and adjustments. |
-| 478 | P1 | Problem | Source load counts/skips/fallback causes are not retained. | Store and expose a `LoadReport`. |
+| 478 | P1 | Problem | Source counts/skips/fallback causes are logged but not retained or exposed. | Store the latest redacted `LoadReport` in application health state. |
 | 479 | P1 | Problem | Runtime/app/platform versions are absent from support output. | Include app, Rust target, macOS, GPU backend, and schema versions. |
 | 480 | P1 | Improvement | Benchmark output is human-only text. | Add optional JSON for CI while preserving one-line text. |
 | 481 | P1 | Improvement | There is no diagnostics command in the tray. | Add View/Copy Diagnostics with redaction. |
@@ -642,7 +642,7 @@ observed **Problem/Risk** from an **Improvement/Idea**.
 
 ## Best next 20 moves
 
-1. Return a typed `LoadResult` and show fallback immediately (#3, #101-109).
+1. Retain `LoadReport`, expose quiet source health, and add owned retry (#5, #18, #101-110, #341, #478, #482).
 2. Add stable card IDs plus a versioned local `Store` (#1, #51, #126-138).
 3. Define review events and a simple due-card scheduler (#2, #26-35, #151).
 4. Replace the hard-coded viewport with monitor/usable-frame handling (#276-281).

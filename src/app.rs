@@ -2,6 +2,7 @@ use crate::config::Config;
 use crate::deck::Deck;
 use crate::platform::Speaker;
 use crate::session::SessionClock;
+use crate::source::{LoadOutcome, LoadReport};
 use crate::theme::Theme;
 use crate::timing;
 use crate::ui::{CardContent, CardStyle, CardTimeline, CardView};
@@ -12,7 +13,7 @@ use rand::RngExt;
 use rand::rng;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::mpsc::{Receiver, Sender};
+use std::sync::mpsc::{Receiver, Sender, TryRecvError};
 use std::time::{Duration, Instant};
 
 // Repaint cadence while a card is animating in (word -> transcription ->
@@ -43,6 +44,8 @@ pub struct App {
     menu_ids: MenuIds,
     menu_tx: Option<Sender<muda::MenuId>>,
     menu_rx: Receiver<muda::MenuId>,
+    source_rx: Option<Receiver<LoadReport>>,
+    pending_words: Option<Vec<crate::model::Word>>,
     cfg: Config,
     bench: bool,
     frames: Arc<AtomicUsize>,
@@ -52,7 +55,13 @@ pub struct App {
 }
 
 impl App {
-    pub fn new(deck: Deck, menu_ids: MenuIds, cfg: Config, speaker: Box<dyn Speaker>) -> Self {
+    pub fn new(
+        deck: Deck,
+        menu_ids: MenuIds,
+        cfg: Config,
+        source_rx: Option<Receiver<LoadReport>>,
+        speaker: Box<dyn Speaker>,
+    ) -> Self {
         let (menu_tx, menu_rx) = std::sync::mpsc::channel();
         let now = Instant::now();
         let theme = Theme::from_config(&cfg);
@@ -66,6 +75,8 @@ impl App {
             menu_ids,
             menu_tx: Some(menu_tx),
             menu_rx,
+            source_rx,
+            pending_words: None,
             cfg,
             bench: std::env::var("MEMO_BENCH").is_ok(),
             frames: Arc::new(AtomicUsize::new(0)),
@@ -78,6 +89,11 @@ impl App {
     fn advance(&mut self) {
         if let Some(scheduler) = &mut self.wake_scheduler {
             scheduler.cancel();
+        }
+        if let Some(words) = self.pending_words.take()
+            && self.deck.replace_words(words)
+        {
+            self.prev_width = self.theme.metrics.min_width;
         }
         self.deck.advance();
         // Roll the interval against the new word's frequency so rare-word dwell
@@ -135,6 +151,33 @@ impl App {
             }
         });
     }
+
+    fn poll_source(&mut self) {
+        let result = self.source_rx.as_ref().map(Receiver::try_recv);
+        match result {
+            Some(Ok(report)) => {
+                self.source_rx = None;
+                self.handle_source_report(report);
+            }
+            Some(Err(TryRecvError::Disconnected)) => {
+                self.source_rx = None;
+                eprintln!("memo-words: background word source disconnected without a report");
+            }
+            Some(Err(TryRecvError::Empty)) | None => {}
+        }
+    }
+
+    fn handle_source_report(&mut self, mut report: LoadReport) {
+        eprintln!("memo-words: word source {report}");
+        for issue in &report.issues {
+            eprintln!("memo-words: source {}: {}", issue.kind, issue.message);
+        }
+        if matches!(report.outcome, LoadOutcome::Loaded | LoadOutcome::Partial)
+            && report.is_usable()
+        {
+            self.pending_words = Some(std::mem::take(&mut report.words));
+        }
+    }
 }
 
 impl eframe::App for App {
@@ -188,6 +231,11 @@ impl eframe::App for App {
                 });
             }
         }
+
+        // Poll after the initial advance so even an immediately available
+        // remote result cannot replace the fallback before its first frame.
+        // Loaded words are queued until the next normal advance.
+        self.poll_source();
 
         while let Ok(id) = self.menu_rx.try_recv() {
             if id == self.menu_ids.quit {
@@ -322,7 +370,7 @@ mod tests {
             pause: muda::MenuId::from("pause"),
             quit: muda::MenuId::from("quit"),
         };
-        App::new(deck, ids, cfg, speaker)
+        App::new(deck, ids, cfg, None, speaker)
     }
 
     // A test double that records the words it is asked to speak, so we can assert
@@ -385,5 +433,41 @@ mod tests {
         for _ in 0..1000 {
             assert!(app.roll_interval(1) >= Duration::from_secs(1));
         }
+    }
+
+    #[test]
+    fn loaded_source_waits_for_the_next_advance_before_replacing_fallback() {
+        let mut app = test_app(1, Config::default());
+        app.advance();
+        assert_eq!(app.deck.current().unwrap().word, "w0");
+
+        app.handle_source_report(LoadReport::loaded(
+            crate::source::SourceKind::Mongo,
+            vec![Word {
+                word: "remote".into(),
+                transcription: String::new(),
+                translation: String::new(),
+                frequency: 1,
+                example: String::new(),
+            }],
+        ));
+
+        assert_eq!(app.deck.current().unwrap().word, "w0");
+        app.advance();
+        assert_eq!(app.deck.current().unwrap().word, "remote");
+    }
+
+    #[test]
+    fn fallback_source_report_does_not_queue_a_duplicate_deck() {
+        let mut app = test_app(1, Config::default());
+        let primary = LoadReport::failed(
+            crate::source::SourceKind::Mongo,
+            crate::source::LoadIssue::new(crate::source::LoadIssueKind::Connection, "offline"),
+        );
+        let report = LoadReport::with_fallback(primary, crate::fallback::fallback_words());
+
+        app.handle_source_report(report);
+
+        assert!(app.pending_words.is_none());
     }
 }

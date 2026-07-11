@@ -1,131 +1,58 @@
-//! Where words are loaded from. The `WordSource` trait (DIP) decouples the app
-//! from any concrete backend, so the composition root in `main` wires in MongoDB,
-//! a static set, or a fallback-wrapped source, and tests use an in-memory one
-//! without a database. The concrete backends live here; the data model lives in
-//! [`crate::model`] and the built-in deck in [`crate::fallback`].
+//! Word-source facade and fallback policy.
 
-use crate::fallback::{FALLBACK, fallback_words};
-use crate::model::Word;
-use std::time::Duration;
+mod mongo;
+mod report;
+mod static_source;
 
-/// A place words can be loaded from. Decoupling the app from MongoDB behind
-/// this trait (DIP) lets `main` wire in any concrete source and lets tests use
-/// an in-memory one without a database.
-pub trait WordSource {
-    fn load(&self) -> Vec<Word>;
+use crate::fallback::fallback_words;
+
+pub use mongo::MongoWordSource;
+pub use report::{LoadIssue, LoadIssueKind, LoadOutcome, LoadReport, SourceKind};
+pub use static_source::StaticWordSource;
+
+/// A synchronous source capability. Slow implementations are executed by the
+/// background loader; the domain-facing contract remains small and testable.
+pub trait WordSource: Send + 'static {
+    fn load(&self) -> LoadReport;
 }
 
-/// Loads from a MongoDB collection, returning an empty vec on any failure so a
-/// caller can fall back gracefully.
-pub struct MongoWordSource {
-    pub uri: String,
-    pub database: String,
-    pub collection: String,
-}
-
-impl Default for MongoWordSource {
-    fn default() -> Self {
-        Self {
-            uri: "mongodb://localhost:27017".to_string(),
-            database: "english_words".to_string(),
-            collection: "words".to_string(),
-        }
-    }
-}
-
-impl WordSource for MongoWordSource {
-    fn load(&self) -> Vec<Word> {
-        // Match the rest of this path: any failure returns an empty vec so the
-        // caller (WithFallback) substitutes the built-in deck, instead of a panic.
-        let rt = match tokio::runtime::Runtime::new() {
-            Ok(rt) => rt,
-            Err(e) => {
-                eprintln!("Failed to create tokio runtime: {e}");
-                return Vec::new();
-            }
-        };
-        rt.block_on(async {
-            let mut options = match mongodb::options::ClientOptions::parse(&self.uri).await {
-                Ok(o) => o,
-                Err(e) => {
-                    eprintln!("MongoDB connection string invalid: {e}");
-                    return Vec::new();
-                }
-            };
-            // Fail over to the fallback deck within a couple of seconds instead
-            // of blocking the UI for the driver's default 30s server-selection
-            // timeout when no MongoDB is reachable (the common "not running"
-            // case). The card should appear promptly, not after a long stall.
-            options.server_selection_timeout = Some(Duration::from_secs(2));
-            options.connect_timeout = Some(Duration::from_secs(2));
-
-            let client = match mongodb::Client::with_options(options) {
-                Ok(c) => c,
-                Err(e) => {
-                    eprintln!("MongoDB client init failed: {e}");
-                    return Vec::new();
-                }
-            };
-
-            let collection = client
-                .database(&self.database)
-                .collection::<Word>(&self.collection);
-
-            let mut cursor = match collection.find(mongodb::bson::doc! {}).await {
-                Ok(c) => c,
-                Err(e) => {
-                    // A real connection failure (server down/unreachable)
-                    // surfaces here, not at parse time, so the actionable hint
-                    // belongs on this branch.
-                    eprintln!("Failed to query words: {e}");
-                    eprintln!(
-                        "Is MongoDB running? Start it: brew services start mongodb-community"
-                    );
-                    return Vec::new();
-                }
-            };
-
-            let mut words = Vec::new();
-            while cursor.advance().await.unwrap_or(false) {
-                if let Ok(word) = cursor.deserialize_current() {
-                    words.push(word);
-                }
-            }
-
-            if words.is_empty() {
-                eprintln!("No words found. Run: mongosh english_words seed_words.js");
-            }
-
-            words
-        })
-    }
-}
-
-/// A fixed in-memory word set. Used for the benchmark harness and tests, and as
-/// the built-in fallback deck.
-pub struct StaticWordSource(pub Vec<Word>);
-
-impl WordSource for StaticWordSource {
-    fn load(&self) -> Vec<Word> {
-        self.0.clone()
-    }
-}
-
-/// Wraps a primary source and substitutes the built-in fallback deck whenever
-/// the primary yields nothing (Decorator). Keeps the "Mongo, else fallback"
-/// policy out of `main` and composable with any `WordSource`.
+/// Decorates any primary source with the built-in offline deck while retaining
+/// the primary attempt, outcome, and issues in the returned report.
 pub struct WithFallback<S: WordSource>(pub S);
 
 impl<S: WordSource> WordSource for WithFallback<S> {
-    fn load(&self) -> Vec<Word> {
-        let words = self.0.load();
-        if words.is_empty() {
-            eprintln!(
-                "Using built-in fallback word set ({} words).",
-                FALLBACK.len()
-            );
-            return fallback_words();
+    fn load(&self) -> LoadReport {
+        let report = self.0.load();
+        if report.is_usable() {
+            report
+        } else {
+            LoadReport::with_fallback(report, fallback_words())
         }
-        words
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct FailedSource;
+
+    impl WordSource for FailedSource {
+        fn load(&self) -> LoadReport {
+            LoadReport::failed(
+                SourceKind::Mongo,
+                LoadIssue::new(LoadIssueKind::Connection, "offline"),
+            )
+        }
+    }
+
+    #[test]
+    fn fallback_preserves_primary_failure_context() {
+        let report = WithFallback(FailedSource).load();
+        assert_eq!(report.requested, SourceKind::Mongo);
+        assert_eq!(report.active, Some(SourceKind::Fallback));
+        assert_eq!(report.outcome, LoadOutcome::Fallback);
+        assert_eq!(report.issues[0].kind, LoadIssueKind::Connection);
+        assert!(!report.words.is_empty());
     }
 }

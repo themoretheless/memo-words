@@ -2,6 +2,7 @@ mod app;
 mod config;
 mod deck;
 mod fallback;
+mod loading;
 mod model;
 mod platform;
 mod selector;
@@ -22,21 +23,24 @@ use tray_icon::TrayIconBuilder;
 
 fn main() -> eframe::Result<()> {
     let cfg = config::Config::load();
+    let bench = std::env::var("MEMO_BENCH").is_ok();
 
-    // Composition root: pick the concrete word source here, behind the
-    // WordSource trait, so nothing downstream depends on MongoDB directly.
-    let source: Box<dyn WordSource> = if std::env::var("MEMO_BENCH").is_ok() {
-        Box::new(StaticWordSource(vec![Word {
+    // The normal app always has a usable deck before the window is created.
+    // Benchmark mode stays deterministic and never starts the remote adapter.
+    let initial_words = if bench {
+        StaticWordSource(vec![Word {
             word: "benchmark".into(),
             transcription: "/ˈbentʃmɑːk/".into(),
             translation: "эталонный тест".into(),
             frequency: 1,
             example: "We ran the benchmark twice.".into(),
-        }]))
+        }])
+        .load()
+        .words
     } else {
-        Box::new(WithFallback(MongoWordSource::default()))
+        fallback::fallback_words()
     };
-    let deck = Deck::new(source.load(), Box::new(FrequencyWeighted))
+    let deck = Deck::new(initial_words, Box::new(FrequencyWeighted))
         .with_recap_chance(cfg.learning.recap_chance);
 
     let menu = Menu::new();
@@ -91,6 +95,15 @@ fn main() -> eframe::Result<()> {
         Box::new(|cc| {
             ui::setup_visuals(&cc.egui_ctx);
             ui::load_fonts(&cc.egui_ctx);
+            let source_rx = if bench {
+                None
+            } else {
+                let ctx = cc.egui_ctx.clone();
+                Some(loading::spawn(
+                    WithFallback(MongoWordSource::default()),
+                    move || ctx.request_repaint(),
+                ))
+            };
             // Pick the TTS adapter at the composition root: speak aloud only when
             // configured, otherwise a no-op speaker. App just routes to the port.
             let speaker: Box<dyn platform::Speaker> = if cfg.learning.speak {
@@ -102,6 +115,7 @@ fn main() -> eframe::Result<()> {
                 deck,
                 menu_ids.clone(),
                 cfg,
+                source_rx,
                 speaker,
             )))
         }),

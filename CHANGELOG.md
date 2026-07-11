@@ -7,6 +7,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- Typed source outcomes with active/requested source, loaded/skipped counts,
+  bounded issue samples, and preserved fallback causes.
+- A one-shot background source runner that wakes eframe only when its report is
+  ready, plus tested atomic deck replacement.
 - Example sentence line on the card, with the deck and fallback carrying an
   optional `example` field.
 - Many opt-in, default-preserving config keys: `card_opacity`, `corner_radius`,
@@ -20,6 +24,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `font_scale`, `enhanced_contrast`, and `reduce_motion` accessibility controls.
 
 ### Changed
+- Startup is fallback-first: the first card no longer waits for MongoDB, and a
+  usable remote deck takes over on the next normal word change rather than
+  replacing visible content midway.
+- Split source responsibilities into report, static, and Mongo adapters behind
+  the stable `source.rs` facade.
 - Decomposed the code into cohesive, loosely-coupled modules: `model`, `source`,
   `fallback`, a pure `timing` (choreography/pacing/scheduling shared by the
   scheduler and renderer), `theme`, and `platform`, leaving `app` a thin eframe
