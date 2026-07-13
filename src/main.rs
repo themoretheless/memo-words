@@ -1,6 +1,7 @@
 mod app;
 mod config;
 mod deck;
+mod diagnostics;
 mod fallback;
 mod loading;
 mod model;
@@ -16,9 +17,9 @@ mod wake;
 
 use deck::Deck;
 use model::Word;
-use muda::{Menu, MenuItem};
+use muda::{Menu, MenuItem, PredefinedMenuItem};
 use selector::FrequencyWeighted;
-use source::{MongoWordSource, StaticWordSource, WithFallback, WordSource};
+use source::{MongoWordSource, SourceController, StaticWordSource, WithFallback, WordSource};
 use tray_icon::TrayIconBuilder;
 
 fn main() -> eframe::Result<()> {
@@ -40,28 +41,39 @@ fn main() -> eframe::Result<()> {
     } else {
         fallback::fallback_words()
     };
+    let initial_word_count = initial_words.len();
     let deck = Deck::new(initial_words, Box::new(FrequencyWeighted))
         .with_recap_chance(cfg.learning.recap_chance);
 
     let menu = Menu::new();
+    let source_menu = tray::SourceMenu::new(bench);
     let next_item = MenuItem::new("Next word", true, None);
     let pause_item = MenuItem::new("Pause / Resume", true, None);
     let quit_item = MenuItem::new("Quit", true, None);
+    let separator_1 = PredefinedMenuItem::separator();
+    let separator_2 = PredefinedMenuItem::separator();
+    let separator_3 = PredefinedMenuItem::separator();
     let menu_ids = app::MenuIds {
         next: next_item.id().clone(),
         pause: pause_item.id().clone(),
+        reload: source_menu.reload.id().clone(),
+        diagnostics: source_menu.diagnostics.id().clone(),
         quit: quit_item.id().clone(),
     };
     // Tray failures are not fatal: the overlay still cycles words on the timer
     // without a tray menu, so log and continue rather than crash on startup.
-    if let Err(e) = menu.append(&next_item) {
-        eprintln!("memo-words: could not add the 'Next word' menu item: {e}");
-    }
-    if let Err(e) = menu.append(&pause_item) {
-        eprintln!("memo-words: could not add the 'Pause / Resume' menu item: {e}");
-    }
-    if let Err(e) = menu.append(&quit_item) {
-        eprintln!("memo-words: could not add the 'Quit' menu item: {e}");
+    if let Err(e) = menu.append_items(&[
+        &source_menu.status,
+        &separator_1,
+        &next_item,
+        &pause_item,
+        &separator_2,
+        &source_menu.reload,
+        &source_menu.diagnostics,
+        &separator_3,
+        &quit_item,
+    ]) {
+        eprintln!("memo-words: could not build the complete tray menu: {e}");
     }
 
     let mut tray_builder = TrayIconBuilder::new()
@@ -95,13 +107,20 @@ fn main() -> eframe::Result<()> {
         Box::new(|cc| {
             ui::setup_visuals(&cc.egui_ctx);
             ui::load_fonts(&cc.egui_ctx);
-            let source_rx = if bench {
+            let source = if bench {
                 None
             } else {
-                let ctx = cc.egui_ctx.clone();
-                Some(loading::spawn(
-                    WithFallback(MongoWordSource::default()),
-                    move || ctx.request_repaint(),
+                let source_ctx = cc.egui_ctx.clone();
+                Some(SourceController::new(
+                    initial_word_count,
+                    Box::new(move |attempt_id| {
+                        let wake_ctx = source_ctx.clone();
+                        loading::spawn(
+                            attempt_id,
+                            WithFallback(MongoWordSource::default()),
+                            move || wake_ctx.request_repaint(),
+                        )
+                    }),
                 ))
             };
             // Pick the TTS adapter at the composition root: speak aloud only when
@@ -115,7 +134,8 @@ fn main() -> eframe::Result<()> {
                 deck,
                 menu_ids.clone(),
                 cfg,
-                source_rx,
+                source,
+                Some(source_menu.clone()),
                 speaker,
             )))
         }),

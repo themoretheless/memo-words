@@ -7,6 +7,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- `SourceController` lifecycle state with normal/degraded/retrying/failed health,
+  retained last report, pending-vs-active deck tracking, and safe manual reload.
+- Compact tray source status, `Reload words`, and redacted `Copy diagnostics`
+  with app/runtime/selected-config/source context.
+- Source attempt IDs, elapsed time, completion timestamp, and stable loaded
+  counts that survive payload handoff into the deck.
 - Typed source outcomes with active/requested source, loaded/skipped counts,
   bounded issue samples, and preserved fallback causes.
 - A one-shot background source runner that wakes eframe only when its report is
@@ -39,6 +45,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   semantics into a tested session clock.
 
 ### Fixed
+- A failed reload now preserves the currently active Mongo/fallback deck and
+  reports degraded health instead of replacing or mislabeling working data.
 - Reject non-finite (`nan`/`inf`) config values so they can't poison a field
   (e.g. an infinite delay that would pin the app at 60fps).
 - Start up gracefully: a tray, menu, or tokio-runtime failure now logs and

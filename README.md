@@ -43,8 +43,9 @@ never waits for MongoDB. In the background the app tries
 `english_words` database. A usable remote deck is queued and takes over on the
 next normal word change, avoiding an abrupt mid-card swap. Partially readable
 data uses its valid rows and reports skipped records. If MongoDB is unavailable
-or yields no valid words, the typed report is written to stderr and the
-built-in deck remains active.
+or yields no valid words, the built-in deck remains active. The latest typed
+report, attempt timing, effective source, and word counts remain available to
+the tray diagnostics. A failed reload never replaces a working deck.
 
 Each word document has the shape:
 
@@ -141,8 +142,14 @@ speak = true
 
 ## Tray menu
 
+- **Source: ...** - a quiet, disabled status row showing loading, pending,
+  active, degraded, or failed source state and the effective word count.
 - **Next word** - skip to a new word immediately.
 - **Pause / Resume** - stop/restart advancing to new words.
+- **Reload words** - retry MongoDB without restarting. It is disabled while an
+  attempt or safe deck handoff is already in progress.
+- **Copy diagnostics** - copy a redacted app/runtime/config/source report. Raw
+  backend error messages are deliberately excluded.
 - **Quit** - exit the app.
 
 ## Environment variables
@@ -164,7 +171,7 @@ speak = true
 ## Documentation
 
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) - SOLID/DRY module map,
-  dependency direction, runtime flow, and a 26-step small-piece reading order.
+  dependency direction, runtime flow, and a 29-step small-piece reading order.
 - [`docs/RECOMMENDATION.md`](docs/RECOMMENDATION.md) - the canonical 500-item
   register: 20 product/engineering areas with 25 findings and actions each.
 - [`docs/DESIGN_IDEAS.md`](docs/DESIGN_IDEAS.md) - the running design backlog.
@@ -174,9 +181,9 @@ Compatibility aliases are kept at the repository root for quick lookup:
 The canonical documents live in `docs/`.
 
 For a quick code tour, start with `model.rs`, `selector.rs`, `deck.rs`, and
-`session.rs`; then read the small timing, config, UI, source, and loading
-modules before opening `app.rs` and `main.rs`. The architecture document
-explains what question each file answers.
+`session.rs`; then read the small timing, config, UI, source, loading,
+diagnostics, and tray modules before opening `app.rs` and `main.rs`. The
+architecture document explains what question each file answers.
 
 ## License
 

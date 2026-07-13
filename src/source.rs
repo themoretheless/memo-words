@@ -1,11 +1,15 @@
 //! Word-source facade and fallback policy.
 
+mod controller;
 mod mongo;
 mod report;
 mod static_source;
 
 use crate::fallback::fallback_words;
 
+#[cfg(test)]
+pub use controller::DeckSource;
+pub use controller::{SourceController, SourceHealth, SourceStatus};
 pub use mongo::MongoWordSource;
 pub use report::{LoadIssue, LoadIssueKind, LoadOutcome, LoadReport, SourceKind};
 pub use static_source::StaticWordSource;

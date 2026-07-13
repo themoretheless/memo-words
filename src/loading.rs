@@ -2,18 +2,21 @@
 
 use crate::source::{LoadReport, WordSource};
 use std::sync::mpsc::{self, Receiver};
+use std::time::{Instant, SystemTime};
 
 /// Run a source away from the UI thread and notify the caller after the result
 /// is available. The callback keeps this adapter independent from egui while
 /// still allowing the composition root to wake a sleeping UI.
-pub fn spawn<S, F>(source: S, on_complete: F) -> Receiver<LoadReport>
+pub fn spawn<S, F>(attempt_id: u64, source: S, on_complete: F) -> Receiver<LoadReport>
 where
     S: WordSource,
     F: FnOnce() + Send + 'static,
 {
     let (tx, rx) = mpsc::channel();
     std::thread::spawn(move || {
-        let report = source.load();
+        let started_at = Instant::now();
+        let mut report = source.load();
+        report.complete_attempt(attempt_id, started_at.elapsed(), SystemTime::now());
         if tx.send(report).is_ok() {
             on_complete();
         }
@@ -38,7 +41,7 @@ mod tests {
             example: String::new(),
         };
         let (wake_tx, wake_rx) = mpsc::channel();
-        let report_rx = spawn(StaticWordSource(vec![word]), move || {
+        let report_rx = spawn(7, StaticWordSource(vec![word]), move || {
             wake_tx.send(()).unwrap();
         });
 
@@ -47,5 +50,6 @@ mod tests {
 
         assert_eq!(report.outcome, LoadOutcome::Loaded);
         assert_eq!(report.words[0].word, "ready");
+        assert_eq!(report.attempt.unwrap().id, 7);
     }
 }

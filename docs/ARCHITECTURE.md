@@ -30,16 +30,19 @@ or macOS subprocesses.
 main.rs (composition root)
   |-- fallback.rs ----------------> model.rs
   |-- source.rs facade
+  |     |-- source/controller.rs -> source/report.rs
   |     |-- source/report.rs -----> model.rs
   |     |-- source/static_source.rs -> model.rs
   |     `-- source/mongo.rs ------> model.rs + mongodb
   |-- loading.rs -----------------> source.rs
+  |-- diagnostics.rs -------------> config.rs + source/controller.rs
   |-- deck.rs --------------------> model.rs + selector.rs
   |-- platform.rs (Speaker)
-  |-- tray.rs / muda IDs
+  |-- tray.rs (icon + source menu view)
   `-- app.rs (eframe adapter)
        |-- deck.rs
-       |-- source.rs (LoadReport handoff)
+       |-- source.rs (SourceController)
+       |-- diagnostics.rs / tray.rs
        |-- session.rs
        |-- wake.rs (owned long-deadline worker)
        |-- timing.rs facade
@@ -90,9 +93,12 @@ step can be understood without reading the later ones.
 | 21 | `src/fallback.rs` | Which records guarantee offline startup? |
 | 22 | `src/source.rs` | How are source contracts and fallback policy composed? |
 | 23 | `src/loading.rs` | How does synchronous source work leave the UI thread? |
-| 24 | `src/platform.rs` | How is speech isolated from the app? |
-| 25 | `src/app.rs` | How are source handoff, commands, timing, deck, and render joined? |
-| 26 | `src/main.rs` | Which concrete adapters are wired at startup? |
+| 24 | `src/source/controller.rs` | How are attempts, health, retry, and active/pending decks owned? |
+| 25 | `src/diagnostics.rs` | Which redacted support facts can be copied? |
+| 26 | `src/platform.rs` | How is speech isolated from the app? |
+| 27 | `src/tray.rs` | How are source state and commands presented compactly? |
+| 28 | `src/app.rs` | How are source handoff, commands, timing, deck, and render joined? |
+| 29 | `src/main.rs` | Which concrete adapters are wired at startup? |
 
 ## Module responsibilities
 
@@ -171,20 +177,22 @@ smaller.
 | `source/report.rs` | Typed outcome, issue, active-source, count, and fallback metadata. |
 | `source/static_source.rs` | Deterministic in-memory source for tests and benchmarks. |
 | `source/mongo.rs` | Mongo query/cursor/decode mapping and bounded diagnostics. |
+| `source/controller.rs` | One active attempt, retained report, health, retry, and deck activation state. |
 | `source.rs` | Stable `WordSource` facade and fallback decorator. |
 | `fallback.rs` | Built-in offline records. |
-| `loading.rs` | One-shot background source execution and completion notification. |
+| `loading.rs` | Timed background source execution and completion notification. |
+| `diagnostics.rs` | Redacted support report without raw backend error messages. |
 | `platform.rs` | `Speaker` port with macOS and null adapters. |
-| `tray.rs` | Procedural tray icon pixels. |
+| `tray.rs` | Procedural icon plus compact source status/reload/diagnostics controls. |
 | `wake.rs` | Owned/cancellable worker for long repaint deadlines. |
 | `app.rs` | eframe lifecycle, menu polling, deck advance, render orchestration. |
 | `main.rs` | Choose concrete source/speaker, construct tray/window, run eframe. |
 
-The 500-item audit intentionally calls out the remaining adapter debt:
-`LoadReport` is logged but not retained as user-visible health state, source
-loading has no retry/cancellation lifecycle, platform path/font/display logic
-is still scattered, `App` still sees raw muda IDs and creates RNG/time directly,
-and tray/worker lifecycles are not owned explicitly.
+The 500-item audit intentionally calls out the remaining adapter debt: source
+attempts have manual retry but no cancellation/backoff/progress, platform
+path/font/display logic is still scattered, `App` still sees raw muda IDs and
+creates RNG/time directly, diagnostics cover only selected config/capabilities,
+and tray/worker shutdown lifecycles are not owned explicitly.
 
 ## Runtime flow
 
@@ -194,19 +202,22 @@ and tray/worker lifecycles are not owned explicitly.
 2. Normal mode immediately builds `Deck` from fallback words; benchmark mode
    uses one deterministic static record and never starts Mongo.
 3. It creates tray/menu IDs and the full-screen transparent viewport.
-4. Inside eframe setup it starts `WithFallback<MongoWordSource>` through the
-   one-shot `loading` worker and gives `App` the report receiver.
+4. Inside eframe setup it gives `SourceController` a launcher that runs
+   `WithFallback<MongoWordSource>` through the timed `loading` worker.
 5. It selects `SystemSpeaker` or `NullSpeaker` and constructs `App`.
 6. The first `App` advance renders fallback without waiting for remote I/O.
-7. Worker completion requests one repaint. `App` logs the typed report and
-   queues usable remote words, or keeps fallback on empty/failure.
-8. The next normal timer/menu advance atomically resets deck history, installs
-   queued words, and starts the new card. The visible card never changes midway.
+7. Worker completion requests one repaint. `SourceController` retains the
+   report and health while `App` queues usable remote words or keeps the active
+   deck on failure.
+8. The tray shows a disabled status row and enables Reload only when no attempt
+   or pending handoff is active.
+9. The next normal timer/menu advance installs queued words, then controller
+   marks that source active. The visible card never changes midway.
 
 ### Each frame
 
-1. `App` polls the one-shot source report after its initial fallback advance.
-2. It consumes menu events and converts them into state changes.
+1. `App` polls `SourceController` after its initial fallback advance.
+2. It consumes menu events, including safe reload and redacted diagnostics copy.
 3. `SessionClock` decides whether the current word is due to advance.
 4. `timing` derives reveal delays, exit window, and repaint sleep.
 5. `Theme` and config create `CardContent`, `CardTimeline`, and `CardStyle`.
@@ -232,7 +243,8 @@ mid-fade frame cannot request 60 FPS forever.
 - **Liskov substitution:** `NullSpeaker` and `StaticWordSource` let tests and
   benchmark mode replace OS/remote behavior without changing callers.
 - **Source boundary:** `WordSource` returns one typed `LoadReport`; `loading`
-  handles execution policy and `WithFallback` handles availability policy.
+  times background execution, `WithFallback` handles availability policy, and
+  `SourceController` owns runtime lifecycle without knowing Mongo or egui.
 - **Interface segregation:** config is grouped by timing/appearance/learning/
   accessibility; rendering receives content/timeline/style contracts.
 - **Dependency inversion:** `App` depends on `Speaker`; `Deck` depends on
@@ -250,10 +262,10 @@ scattered `eprintln!`. These are tracked as #76-80, #363-364, and #338/#476.
 
 ## Verification
 
-The current suite has 71 unit tests covering config groups/parser,
+The current suite has 77 unit tests covering config groups/parser,
 deck/selector/replacement, session pause semantics, timing modules, themes,
-text helpers, typed source reports, and the background handoff. The standard
-local gate is:
+text helpers, timed source reports, retry/activation state, redaction, tray
+labels, and the background handoff. The standard local gate is:
 
 ```sh
 cargo fmt --check

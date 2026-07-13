@@ -48,7 +48,7 @@ observed **Problem/Risk** from an **Improvement/Idea**.
 | 2 | P0 | Problem | Recap is random in-memory resurfacing, not durable spaced repetition. | Persist due dates and route review selection through an SRS policy. |
 | 3 | P0 | Risk | Fallback-first startup has no release gate proving a timely first visible card. | Add an app-bundle smoke assertion with a cold-start latency budget. |
 | 4 | P1 | Problem | Non-technical users must hand-edit a config file. | Add a small tray-opened preferences window with validation and save feedback. |
-| 5 | P1 | Problem | The product never explains whether MongoDB or fallback data is active. | Show source state, word count, and last load result in diagnostics/tray. |
+| 5 | P1 | Improvement | The compact tray source row cannot explain why health is degraded. | Open a small read-only detail view from the row without adding card chrome. |
 | 6 | P1 | Risk | A tray creation failure leaves a click-through overlay with no direct controls. | Provide a fallback hotkey or small non-overlay control window. |
 | 7 | P1 | Problem | Users cannot choose a target monitor. | Add monitor selection with a stable name/index fallback strategy. |
 | 8 | P1 | Problem | Offline use is limited to a small 40-word fallback deck. | Bundle a curated portable deck and treat MongoDB as optional enrichment. |
@@ -61,12 +61,12 @@ observed **Problem/Risk** from an **Improvement/Idea**.
 | 15 | P1 | Improvement | No progress summary shows exposure, recall, or retention trends. | Build local-only summaries after persistence exists. |
 | 16 | P1 | Problem | Only one deck/source configuration can be active. | Add named deck profiles and an explicit active profile. |
 | 17 | P1 | Problem | Personal CSV/JSON word lists have no supported import path. | Define a portable deck schema and import validator. |
-| 18 | P1 | Risk | Source failure silently changes the product from full deck to fallback behavior. | Surface fallback activation once, without recurring notifications. |
+| 18 | P1 | Risk | Fallback activation is visible only after the user opens the tray. | Consider one quiet, once-per-transition degraded notification with an opt-out. |
 | 19 | P2 | Improvement | The cadence cannot follow working hours or a study schedule. | Add quiet hours and per-period interval profiles. |
 | 20 | P2 | Risk | High-frequency ambient exposure can become wallpaper and lose attention value. | Add fatigue-aware cadence and optional session caps. |
 | 21 | P2 | Problem | Speech cannot be muted immediately without editing config and restarting. | Add a tray speech toggle and serialize speech through one worker. |
 | 22 | P2 | Problem | Users receive no in-app indication that a newer release exists. | Add a privacy-preserving, opt-in release check. |
-| 23 | P2 | Problem | There is no user-facing diagnostics export for support. | Add a redacted diagnostics report with config/source/runtime state. |
+| 23 | P2 | Improvement | Diagnostics are clipboard-only and cannot be previewed before export. | Add a read-only selectable preview with explicit Copy and Save actions. |
 | 24 | P2 | Improvement | The card cannot temporarily hide without pausing learning state. | Add separate Hide/Show and Pause/Resume commands. |
 | 25 | P3 | Idea | Product decisions have no privacy-safe evidence about feature usefulness. | Define opt-in local counters first; never add telemetry by default. |
 
@@ -164,16 +164,16 @@ observed **Problem/Risk** from an **Improvement/Idea**.
 
 | # | Pri | Kind | Finding | Recommended action |
 |---:|:---:|---|---|---|
-| 101 | P0 | Problem | `LoadReport` has no elapsed time, attempt ID, or completion timestamp. | Add bounded attempt metadata so diagnostics can order and compare loads. |
-| 102 | P0 | Problem | The background source runner is one-shot and cannot express cancellation, retry, or progress. | Define an owned source-load lifecycle before adding reload controls. |
+| 101 | P0 | Problem | Source attempt IDs reset on every process launch and have no session correlation ID. | Add a non-secret session ID if cross-run support correlation becomes necessary. |
+| 102 | P0 | Problem | `SourceController` owns manual retry but cannot cancel work or report progress. | Add cooperative cancellation and bounded progress phases before automatic retry. |
 | 103 | P1 | Risk | Mongo records are consumed without a deterministic sort or result bound. | Define stable ordering and a validated maximum deck size. |
 | 104 | P1 | Problem | Decode reporting keeps only three messages and no stable document identity. | Retain redacted record IDs/field paths plus aggregate counts. |
 | 105 | P1 | Problem | Mongo URI is hard-coded. | Support environment/config URI with redaction in diagnostics. |
 | 106 | P1 | Problem | Database name is hard-coded. | Add a validated `mongo_database` setting. |
 | 107 | P1 | Problem | Collection name is hard-coded. | Add a validated `mongo_collection` setting. |
 | 108 | P1 | Problem | Connection and selection timeouts are fixed in code. | Expose conservative bounded timeout settings. |
-| 109 | P1 | Risk | The latest source report is discarded after logging and deck handoff. | Retain redacted source state for diagnostics and retry decisions. |
-| 110 | P1 | Improvement | The app cannot reload words without restart. | Trigger the existing atomic deck replacement through an owned retry command. |
+| 109 | P1 | Risk | Only the latest source report is retained, so earlier retry evidence is lost. | Keep a small bounded redacted attempt history in diagnostics. |
+| 110 | P1 | Improvement | Reload is hard-wired to the same Mongo source and settings. | Add validated source selection/settings before supporting multiple adapters. |
 | 111 | P1 | Risk | Remote loading has no cancellation during quit or source change. | Pass a cancellation token through asynchronous loaders. |
 | 112 | P1 | Risk | Repeated failures have no retry/backoff policy. | Add bounded exponential backoff with manual Retry. |
 | 113 | P1 | Problem | There is no local JSON/CSV/TOML source adapter. | Implement a validated file source before adding more remote backends. |
@@ -299,7 +299,7 @@ observed **Problem/Risk** from an **Improvement/Idea**.
 | 213 | P2 | Improvement | The target word is not emphasized inside its example. | Paint matched spans with semantic weight, not raw substring hacks. |
 | 214 | P2 | Improvement | Part-of-speech/sense context has no visual slot. | Reserve a quiet metadata line or label when the model supports it. |
 | 215 | P2 | Improvement | Paused state has no subtle visual affordance. | Add an optional low-salience pause glyph/status outside learning content. |
-| 216 | P2 | Improvement | Fallback/source-degraded state is visually invisible. | Surface it in controls, not as persistent card decoration. |
+| 216 | P2 | Improvement | Degraded state is visible in tray text but has no accessibility announcement policy. | Announce a transition once through an accessible, non-recurring control surface. |
 | 217 | P2 | Risk | Theme tests assert alpha/hierarchy but not actual WCAG contrast ratios. | Add luminance/contrast tests for every semantic token. |
 | 218 | P2 | Risk | Text shrink changes size without adjusting measured vertical centering. | Use one fitted layout result for both height budgeting and paint. |
 | 219 | P2 | Risk | Maximum card width grows with font scale up to a large desktop value. | Use viewport- and reading-length-aware width constraints. |
@@ -345,7 +345,7 @@ observed **Problem/Risk** from an **Improvement/Idea**.
 | # | Pri | Kind | Finding | Recommended action |
 |---:|:---:|---|---|---|
 | 251 | P1 | Problem | The Pause/Resume menu label never reflects current state. | Set the item text to the next available action. |
-| 252 | P1 | Problem | Current word/source/deck state is absent from the tray. | Add concise disabled status rows or a diagnostics window. |
+| 252 | P1 | Improvement | Tray now shows source/deck state but omits pause, current word, and next due time. | Add only the highest-value state to a compact submenu or detail view. |
 | 253 | P1 | Problem | Config changes require restart. | Add validated reload and atomic apply behavior. |
 | 254 | P1 | Problem | There is no preferences window. | Build a compact, keyboard-accessible settings surface. |
 | 255 | P1 | Risk | Tray event watcher lifetime is detached and implicit. | Own a shutdown signal and join/terminate policy. |
@@ -354,8 +354,8 @@ observed **Problem/Risk** from an **Improvement/Idea**.
 | 258 | P1 | Improvement | Corner changes require file edit and restart. | Add a Corner submenu with checked state. |
 | 259 | P1 | Improvement | Theme changes require file edit and restart. | Add a Theme submenu or preferences preview. |
 | 260 | P1 | Improvement | Interval changes are inaccessible during use. | Offer a few named cadence presets plus Custom in preferences. |
-| 261 | P1 | Improvement | Reload Words is unavailable. | Add reload with progress, cancellation, and result feedback. |
-| 262 | P1 | Improvement | There is no Retry Source action after fallback. | Add one-shot retry without restarting the overlay. |
+| 261 | P1 | Improvement | Reload has loading/result feedback but no progress, cancellation, or last-success age. | Extend the controller lifecycle without making the tray row noisy. |
+| 262 | P1 | Improvement | Reload works after fallback, but its label does not become Retry or explain the last failure. | Adapt command copy to lifecycle state while preserving a stable menu ID. |
 | 263 | P2 | Risk | Menu commands are compared through raw external IDs in `App`. | Map them once to a small application command enum. |
 | 264 | P2 | Improvement | Menu state cannot be unit-tested without muda IDs. | Put command interpretation behind an adapter. |
 | 265 | P2 | Improvement | Next Word has no optional keyboard shortcut display. | Register shortcuts and let native menu rendering show them. |
@@ -448,16 +448,16 @@ observed **Problem/Risk** from an **Improvement/Idea**.
 | 337 | P1 | Improvement | Startup failures have no common severity taxonomy. | Define recoverable/degraded/fatal error categories. |
 | 338 | P1 | Improvement | stderr messages lack stable context fields. | Add a tiny structured logging facade. |
 | 339 | P1 | Risk | There is no panic hook or crash diagnostics guidance. | Install a redacted panic report path and document recovery. |
-| 340 | P2 | Risk | No watchdog detects a stalled source/speaker worker. | Add bounded timeouts and health state, not a busy monitor. |
-| 341 | P2 | Improvement | Effective fallback source is not retained in application state. | Store a source status object alongside the deck. |
+| 340 | P2 | Risk | Mongo timeouts are bounded, but detached source/speaker workers have no unified watchdog. | Add owned deadlines and completion outcomes without a busy monitor. |
+| 341 | P2 | Improvement | Source status and the latest report are retained only until process exit. | Persist a minimal last-known summary only if post-restart support needs it. |
 | 342 | P2 | Risk | Reloading future config could partially apply changes. | Parse/validate a complete candidate, then swap atomically. |
 | 343 | P2 | Risk | Future deck replacement could invalidate current indices/history. | Replace by stable IDs and explicit transition rules. |
-| 344 | P2 | Improvement | Errors cannot be copied/exported from the UI. | Add a redacted diagnostics action. |
+| 344 | P2 | Improvement | Diagnostics cannot be previewed, selected, or saved to a file from the UI. | Add a read-only diagnostics surface with explicit export choices. |
 | 345 | P2 | Risk | System sleep and display reconfiguration recovery are untested. | Add lifecycle event handling and manual test cases. |
 | 346 | P2 | Improvement | There is no safe mode after repeated startup failure. | Start fallback-only with defaults and expose the degraded reason. |
 | 347 | P2 | Risk | Partial/corrupt bundled deck behavior is undefined. | Validate embedded assets at build and startup. |
-| 348 | P2 | Improvement | Multiple identical warnings could become noisy after reload support. | Deduplicate warnings by cause and config revision. |
-| 349 | P3 | Idea | Recovery actions are not modeled as commands. | Attach Retry/Open Path/Reset actions to typed diagnostics. |
+| 348 | P2 | Improvement | Repeated reload failures emit identical raw stderr warnings on every attempt. | Deduplicate by issue kind and bounded time window while retaining counts. |
+| 349 | P3 | Idea | Reload is the only recovery action; config/font/speech failures have none. | Attach narrow Open Path/Reset/Retry actions to typed capability reports. |
 | 350 | P3 | Idea | No reliability SLO exists for this ambient utility. | Define first-card success, idle stability, and clean-quit targets. |
 
 ## 15. Architecture, SOLID, and DRY
@@ -525,7 +525,7 @@ observed **Problem/Risk** from an **Improvement/Idea**.
 | # | Pri | Kind | Finding | Recommended action |
 |---:|:---:|---|---|---|
 | 401 | P0 | Risk | Remote Mongo configuration has no secure credential/TLS workflow. | Add secure URI/env support, TLS guidance, and redaction. |
-| 402 | P1 | Risk | Future URI diagnostics could expose passwords or tokens. | Centralize secret-aware formatting before adding structured logs. |
+| 402 | P1 | Risk | Copied diagnostics omit raw errors, but stderr still prints unredacted backend messages. | Centralize secret-aware formatting before configurable URIs or structured logs. |
 | 403 | P1 | Problem | The project has no `SECURITY.md`. | Publish supported versions and a private reporting path. |
 | 404 | P1 | Risk | Config/state file permissions are not enforced. | Create sensitive files with user-only permissions and warn otherwise. |
 | 405 | P1 | Risk | Untrusted source strings have no control-character policy. | Reject or escape bidi overrides, terminal controls, and nulls. |
@@ -534,7 +534,7 @@ observed **Problem/Risk** from an **Improvement/Idea**.
 | 408 | P1 | Risk | Source provenance is not retained. | Attach source and license metadata to every imported record. |
 | 409 | P1 | Risk | Speech receives arbitrary imported word text as a process argument. | Validate length/control characters and use explicit option termination if supported. |
 | 410 | P1 | Improvement | There is no threat model for local files, MongoDB, release assets, and updates. | Add a short scoped threat-model document. |
-| 411 | P1 | Risk | Future diagnostics export could include secrets or personal history. | Define a redaction schema and test it before shipping export. |
+| 411 | P1 | Risk | Diagnostics redaction is omission-based and not a versioned deny-by-default schema. | Version allowed fields and fail tests when future sensitive fields enter output. |
 | 412 | P1 | Improvement | Privacy behavior is not summarized for users. | State clearly: local config, optional MongoDB, no telemetry, no cloud sync. |
 | 413 | P1 | Risk | Dependency actions are pinned to mutable major tags, not commit SHAs. | Pin third-party GitHub Actions and automate updates. |
 | 414 | P1 | Risk | License checks are intentionally skipped in `cargo-deny`. | Add an allow-list or a separate license inventory report. |
@@ -615,12 +615,12 @@ observed **Problem/Risk** from an **Improvement/Idea**.
 | # | Pri | Kind | Finding | Recommended action |
 |---:|:---:|---|---|---|
 | 476 | P1 | Problem | Logs are ad hoc `eprintln!` messages. | Add structured levels/context with no default file logging. |
-| 477 | P1 | Problem | Diagnostics cannot report effective config values. | Expose redacted parsed/effective settings and adjustments. |
-| 478 | P1 | Problem | Source counts/skips/fallback causes are logged but not retained or exposed. | Store the latest redacted `LoadReport` in application health state. |
-| 479 | P1 | Problem | Runtime/app/platform versions are absent from support output. | Include app, Rust target, macOS, GPU backend, and schema versions. |
+| 477 | P1 | Problem | Diagnostics include only selected config fields, not all 20 effective values or adjustments. | Generate a complete redacted effective-config section from one key registry. |
+| 478 | P1 | Problem | Retained diagnostics expose issue kinds/counts but no safe representative codes or field paths. | Add structured redacted details without copying raw backend messages. |
+| 479 | P1 | Problem | Diagnostics include app version, OS family, and architecture but omit OS version, target, GPU, and schemas. | Add the missing runtime/platform/schema facts through narrow adapters. |
 | 480 | P1 | Improvement | Benchmark output is human-only text. | Add optional JSON for CI while preserving one-line text. |
-| 481 | P1 | Improvement | There is no diagnostics command in the tray. | Add View/Copy Diagnostics with redaction. |
-| 482 | P1 | Improvement | No health state distinguishes normal, degraded, retrying, and failed. | Model a small application health enum. |
+| 481 | P1 | Improvement | Clipboard copy has no backend success/error result; tray confirmation is optimistic. | Return copy outcome and provide accessible failure feedback. |
+| 482 | P1 | Improvement | Health states have no transition timestamp, last-success time, or stale-age policy. | Track lifecycle timestamps and define when degraded data becomes stale. |
 | 483 | P1 | Risk | Roadmap priorities can become a flat 500-item queue. | Select one milestone with explicit outcomes and WIP limits. |
 | 484 | P1 | Improvement | Completed audit items have no durable traceability. | Link fixes to commits/PRs and archive them outside the open 500. |
 | 485 | P1 | Improvement | There is no stable plugin/integration boundary. | Define import/export and enrichment ports before SDK ambitions. |
@@ -642,7 +642,7 @@ observed **Problem/Risk** from an **Improvement/Idea**.
 
 ## Best next 20 moves
 
-1. Retain `LoadReport`, expose quiet source health, and add owned retry (#5, #18, #101-110, #341, #478, #482).
+1. Add source cancellation, lifecycle deadlines, and bounded retry/backoff (#102, #111-112, #326, #333, #340, #354).
 2. Add stable card IDs plus a versioned local `Store` (#1, #51, #126-138).
 3. Define review events and a simple due-card scheduler (#2, #26-35, #151).
 4. Replace the hard-coded viewport with monitor/usable-frame handling (#276-281).
@@ -656,7 +656,7 @@ observed **Problem/Risk** from an **Improvement/Idea**.
 12. Add startup/bundle smoke tests and an idle benchmark gate (#301, #376-389).
 13. Sign, notarize, checksum, and validate release artifacts (#426-435).
 14. Feature-gate MongoDB/Tokio for a small offline build (#304, #443).
-15. Add secure Mongo configuration and redacted diagnostics (#401-412, #476-482).
+15. Add secure Mongo configuration and a versioned diagnostics redaction schema (#401-412, #476-482).
 16. Introduce a declarative config-key registry to stop doc drift (#363, #464, #467).
 17. Move pure domain modules into a library crate (#367-368).
 18. Add quiet hours, Snooze, and Focus-aware pausing (#13, #19, #273, #287).

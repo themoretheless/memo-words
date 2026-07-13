@@ -1,10 +1,12 @@
 use crate::config::Config;
 use crate::deck::Deck;
+use crate::diagnostics;
 use crate::platform::Speaker;
 use crate::session::SessionClock;
-use crate::source::{LoadOutcome, LoadReport};
+use crate::source::SourceController;
 use crate::theme::Theme;
 use crate::timing;
+use crate::tray::SourceMenu;
 use crate::ui::{CardContent, CardStyle, CardTimeline, CardView};
 use crate::wake::WakeScheduler;
 use eframe::egui;
@@ -13,7 +15,7 @@ use rand::RngExt;
 use rand::rng;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::mpsc::{Receiver, Sender, TryRecvError};
+use std::sync::mpsc::{Receiver, Sender};
 use std::time::{Duration, Instant};
 
 // Repaint cadence while a card is animating in (word -> transcription ->
@@ -23,11 +25,14 @@ const ANIM_FRAME: Duration = Duration::from_millis(16);
 // Idle window measured by the frame-counter benchmark (MEMO_BENCH=1).
 const BENCH_SECS: u64 = 10;
 const BENCH_WARMUP_SECS: u64 = 2;
+const STATUS_FEEDBACK: Duration = Duration::from_secs(2);
 
 #[derive(Clone)]
 pub struct MenuIds {
     pub next: muda::MenuId,
     pub pause: muda::MenuId,
+    pub reload: muda::MenuId,
+    pub diagnostics: muda::MenuId,
     pub quit: muda::MenuId,
 }
 
@@ -44,8 +49,10 @@ pub struct App {
     menu_ids: MenuIds,
     menu_tx: Option<Sender<muda::MenuId>>,
     menu_rx: Receiver<muda::MenuId>,
-    source_rx: Option<Receiver<LoadReport>>,
+    source: Option<SourceController>,
+    source_menu: Option<SourceMenu>,
     pending_words: Option<Vec<crate::model::Word>>,
+    status_feedback_until: Option<Instant>,
     cfg: Config,
     bench: bool,
     frames: Arc<AtomicUsize>,
@@ -59,13 +66,14 @@ impl App {
         deck: Deck,
         menu_ids: MenuIds,
         cfg: Config,
-        source_rx: Option<Receiver<LoadReport>>,
+        source: Option<SourceController>,
+        source_menu: Option<SourceMenu>,
         speaker: Box<dyn Speaker>,
     ) -> Self {
         let (menu_tx, menu_rx) = std::sync::mpsc::channel();
         let now = Instant::now();
         let theme = Theme::from_config(&cfg);
-        Self {
+        let app = Self {
             deck,
             clock: SessionClock::new(now, Duration::from_secs(cfg.timing.interval_secs)),
             prev_width: theme.metrics.min_width,
@@ -75,13 +83,17 @@ impl App {
             menu_ids,
             menu_tx: Some(menu_tx),
             menu_rx,
-            source_rx,
+            source,
+            source_menu,
             pending_words: None,
+            status_feedback_until: None,
             cfg,
             bench: std::env::var("MEMO_BENCH").is_ok(),
             frames: Arc::new(AtomicUsize::new(0)),
             speaker,
-        }
+        };
+        app.sync_source_menu();
+        app
     }
 
     /// Show the next word: advance the deck, reset the timers, roll a fresh
@@ -94,6 +106,10 @@ impl App {
             && self.deck.replace_words(words)
         {
             self.prev_width = self.theme.metrics.min_width;
+            if let Some(source) = &mut self.source {
+                source.activate_pending();
+            }
+            self.sync_source_menu();
         }
         self.deck.advance();
         // Roll the interval against the new word's frequency so rare-word dwell
@@ -153,29 +169,64 @@ impl App {
     }
 
     fn poll_source(&mut self) {
-        let result = self.source_rx.as_ref().map(Receiver::try_recv);
-        match result {
-            Some(Ok(report)) => {
-                self.source_rx = None;
-                self.handle_source_report(report);
+        let update = self.source.as_mut().and_then(SourceController::poll);
+        let Some(update) = update else {
+            return;
+        };
+        if let Some(words) = update.words {
+            self.pending_words = Some(words);
+        }
+        if update.report_received {
+            if let Some(report) = self
+                .source
+                .as_ref()
+                .and_then(SourceController::latest_report)
+            {
+                eprintln!("memo-words: word source {report}");
+                for issue in &report.issues {
+                    eprintln!("memo-words: source {}: {}", issue.kind, issue.message);
+                }
             }
-            Some(Err(TryRecvError::Disconnected)) => {
-                self.source_rx = None;
-                eprintln!("memo-words: background word source disconnected without a report");
-            }
-            Some(Err(TryRecvError::Empty)) | None => {}
+        } else {
+            eprintln!("memo-words: background word source disconnected without a report");
+        }
+        self.status_feedback_until = None;
+        self.sync_source_menu();
+    }
+
+    fn reload_source(&mut self) {
+        if self.source.as_mut().is_some_and(SourceController::reload) {
+            self.status_feedback_until = None;
+            self.sync_source_menu();
         }
     }
 
-    fn handle_source_report(&mut self, mut report: LoadReport) {
-        eprintln!("memo-words: word source {report}");
-        for issue in &report.issues {
-            eprintln!("memo-words: source {}: {}", issue.kind, issue.message);
+    fn copy_diagnostics(&mut self, ctx: &egui::Context) {
+        ctx.copy_text(diagnostics::build(&self.cfg, self.source.as_ref()));
+        self.status_feedback_until = Some(Instant::now() + STATUS_FEEDBACK);
+        if let Some(menu) = &self.source_menu {
+            menu.show_copied();
         }
-        if matches!(report.outcome, LoadOutcome::Loaded | LoadOutcome::Partial)
-            && report.is_usable()
+    }
+
+    fn restore_source_status(&mut self, now: Instant) {
+        if self
+            .status_feedback_until
+            .is_some_and(|deadline| now >= deadline)
         {
-            self.pending_words = Some(std::mem::take(&mut report.words));
+            self.status_feedback_until = None;
+            self.sync_source_menu();
+        }
+    }
+
+    fn sync_source_menu(&self) {
+        let Some(menu) = &self.source_menu else {
+            return;
+        };
+        if let Some(source) = &self.source {
+            menu.sync(source.status(), source.can_reload());
+        } else {
+            menu.sync_benchmark();
         }
     }
 }
@@ -193,6 +244,7 @@ impl eframe::App for App {
         if self.wake_scheduler.is_none() {
             self.wake_scheduler = Some(WakeScheduler::new(&ctx));
         }
+        self.restore_source_status(Instant::now());
 
         if self.bench {
             self.frames.fetch_add(1, Ordering::Relaxed);
@@ -248,6 +300,10 @@ impl eframe::App for App {
                 }
             } else if id == self.menu_ids.next {
                 self.advance();
+            } else if id == self.menu_ids.reload {
+                self.reload_source();
+            } else if id == self.menu_ids.diagnostics {
+                self.copy_diagnostics(&ctx);
             }
         }
 
@@ -323,7 +379,7 @@ impl eframe::App for App {
         // no frames). The decision is a pure function in `timing` so it can be
         // tested without egui; here we just apply it.
         let anim_end = timing::anim_end(&self.cfg, has_example);
-        let repaint_after = timing::repaint_after(
+        let mut repaint_after = timing::repaint_after(
             elapsed,
             anim_end,
             paused,
@@ -331,6 +387,9 @@ impl eframe::App for App {
             exit_window,
             ANIM_FRAME,
         );
+        if let Some(deadline) = self.status_feedback_until {
+            repaint_after = repaint_after.min(deadline.saturating_duration_since(now));
+        }
         if repaint_after <= ANIM_FRAME {
             if let Some(scheduler) = &mut self.wake_scheduler {
                 scheduler.cancel();
@@ -368,9 +427,11 @@ mod tests {
         let ids = MenuIds {
             next: muda::MenuId::from("next"),
             pause: muda::MenuId::from("pause"),
+            reload: muda::MenuId::from("reload"),
+            diagnostics: muda::MenuId::from("diagnostics"),
             quit: muda::MenuId::from("quit"),
         };
-        App::new(deck, ids, cfg, None, speaker)
+        App::new(deck, ids, cfg, None, None, speaker)
     }
 
     // A test double that records the words it is asked to speak, so we can assert
@@ -438,10 +499,12 @@ mod tests {
     #[test]
     fn loaded_source_waits_for_the_next_advance_before_replacing_fallback() {
         let mut app = test_app(1, Config::default());
+        let (tx, source) = test_source_controller(1);
+        app.source = Some(source);
         app.advance();
         assert_eq!(app.deck.current().unwrap().word, "w0");
 
-        app.handle_source_report(LoadReport::loaded(
+        tx.send(crate::source::LoadReport::loaded(
             crate::source::SourceKind::Mongo,
             vec![Word {
                 word: "remote".into(),
@@ -450,24 +513,49 @@ mod tests {
                 frequency: 1,
                 example: String::new(),
             }],
-        ));
+        ))
+        .unwrap();
+        app.poll_source();
 
         assert_eq!(app.deck.current().unwrap().word, "w0");
         app.advance();
         assert_eq!(app.deck.current().unwrap().word, "remote");
+        assert_eq!(
+            app.source.as_ref().unwrap().status().active.kind,
+            crate::source::SourceKind::Mongo
+        );
     }
 
     #[test]
     fn fallback_source_report_does_not_queue_a_duplicate_deck() {
         let mut app = test_app(1, Config::default());
-        let primary = LoadReport::failed(
+        let (tx, source) = test_source_controller(1);
+        app.source = Some(source);
+        let primary = crate::source::LoadReport::failed(
             crate::source::SourceKind::Mongo,
             crate::source::LoadIssue::new(crate::source::LoadIssueKind::Connection, "offline"),
         );
-        let report = LoadReport::with_fallback(primary, crate::fallback::fallback_words());
+        let report =
+            crate::source::LoadReport::with_fallback(primary, crate::fallback::fallback_words());
 
-        app.handle_source_report(report);
+        tx.send(report).unwrap();
+        app.poll_source();
 
         assert!(app.pending_words.is_none());
+    }
+
+    fn test_source_controller(
+        fallback_words: usize,
+    ) -> (
+        std::sync::mpsc::Sender<crate::source::LoadReport>,
+        SourceController,
+    ) {
+        let (tx, rx) = std::sync::mpsc::channel();
+        let mut receiver = Some(rx);
+        let source = SourceController::new(
+            fallback_words,
+            Box::new(move |_| receiver.take().expect("test starts one source attempt")),
+        );
+        (tx, source)
     }
 }

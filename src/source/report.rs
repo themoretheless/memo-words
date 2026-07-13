@@ -2,6 +2,7 @@
 
 use crate::model::Word;
 use std::fmt;
+use std::time::{Duration, SystemTime};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SourceKind {
@@ -82,13 +83,22 @@ impl LoadIssue {
 }
 
 #[derive(Debug, Clone)]
+pub struct LoadAttempt {
+    pub id: u64,
+    pub elapsed: Duration,
+    pub completed_at: SystemTime,
+}
+
+#[derive(Debug, Clone)]
 pub struct LoadReport {
     pub requested: SourceKind,
     pub active: Option<SourceKind>,
     pub outcome: LoadOutcome,
     pub words: Vec<Word>,
+    pub loaded: usize,
     pub skipped: usize,
     pub issues: Vec<LoadIssue>,
+    pub attempt: Option<LoadAttempt>,
 }
 
 impl LoadReport {
@@ -106,6 +116,7 @@ impl LoadReport {
         skipped: usize,
         issues: Vec<LoadIssue>,
     ) -> Self {
+        let loaded = words.len();
         let (active, outcome) = if words.is_empty() {
             if issues.is_empty() {
                 (None, LoadOutcome::Empty)
@@ -122,8 +133,10 @@ impl LoadReport {
             active,
             outcome,
             words,
+            loaded,
             skipped,
             issues,
+            attempt: None,
         }
     }
 
@@ -137,11 +150,25 @@ impl LoadReport {
         primary.active = Some(SourceKind::Fallback);
         primary.outcome = LoadOutcome::Fallback;
         primary.words = words;
+        primary.loaded = primary.words.len();
         primary
     }
 
     pub fn is_usable(&self) -> bool {
         self.active.is_some() && !self.words.is_empty()
+    }
+
+    pub(crate) fn complete_attempt(
+        &mut self,
+        id: u64,
+        elapsed: Duration,
+        completed_at: SystemTime,
+    ) {
+        self.attempt = Some(LoadAttempt {
+            id,
+            elapsed,
+            completed_at,
+        });
     }
 }
 
@@ -149,15 +176,23 @@ impl fmt::Display for LoadReport {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "requested={}, active={}, outcome={}, loaded={}, skipped={}, issues={}",
+            "attempt={}, requested={}, active={}, outcome={}, loaded={}, skipped={}, issues={}, elapsed_ms={}",
+            self.attempt
+                .as_ref()
+                .map(|attempt| attempt.id.to_string())
+                .unwrap_or_else(|| "none".to_string()),
             self.requested,
             self.active
                 .map(|source| source.to_string())
                 .unwrap_or_else(|| "none".to_string()),
             self.outcome,
-            self.words.len(),
+            self.loaded,
             self.skipped,
-            self.issues.len()
+            self.issues.len(),
+            self.attempt
+                .as_ref()
+                .map(|attempt| attempt.elapsed.as_millis().to_string())
+                .unwrap_or_else(|| "none".to_string())
         )
     }
 }
@@ -210,5 +245,20 @@ mod tests {
 
         assert!(report.is_usable());
         assert_eq!(report.outcome, LoadOutcome::Fallback);
+        assert_eq!(report.loaded, 1);
+    }
+
+    #[test]
+    fn attempt_metadata_does_not_change_the_loaded_count() {
+        let mut report = LoadReport::loaded(SourceKind::Static, vec![word()]);
+        let completed_at = SystemTime::UNIX_EPOCH + Duration::from_secs(10);
+
+        report.complete_attempt(7, Duration::from_millis(25), completed_at);
+
+        let attempt = report.attempt.unwrap();
+        assert_eq!(attempt.id, 7);
+        assert_eq!(attempt.elapsed, Duration::from_millis(25));
+        assert_eq!(attempt.completed_at, completed_at);
+        assert_eq!(report.loaded, 1);
     }
 }
