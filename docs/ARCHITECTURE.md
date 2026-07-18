@@ -36,10 +36,12 @@ main.rs (composition root)
   |     `-- source/mongo.rs ------> model.rs + mongodb
   |-- loading.rs -----------------> source.rs
   |-- diagnostics.rs -------------> config.rs + source/controller.rs
+  |-- command.rs (AppCommand)
   |-- deck.rs --------------------> model.rs + selector.rs
   |-- platform.rs (Speaker)
-  |-- tray.rs (icon + source menu view)
+  |-- tray.rs --------------------> command.rs + source/controller.rs
   `-- app.rs (eframe adapter)
+       |-- command.rs (typed command input)
        |-- deck.rs
        |-- source.rs (SourceController)
        |-- diagnostics.rs / tray.rs
@@ -96,9 +98,10 @@ step can be understood without reading the later ones.
 | 24 | `src/source/controller.rs` | How are attempts, health, retry, and active/pending decks owned? |
 | 25 | `src/diagnostics.rs` | Which redacted support facts can be copied? |
 | 26 | `src/platform.rs` | How is speech isolated from the app? |
-| 27 | `src/tray.rs` | How are source state and commands presented compactly? |
-| 28 | `src/app.rs` | How are source handoff, commands, timing, deck, and render joined? |
-| 29 | `src/main.rs` | Which concrete adapters are wired at startup? |
+| 27 | `src/command.rs` | Which application actions exist independently of their transport? |
+| 28 | `src/tray.rs` | How are native IDs translated and command state presented compactly? |
+| 29 | `src/app.rs` | How are source handoff, commands, timing, deck, and render joined? |
+| 30 | `src/main.rs` | Which concrete adapters are wired at startup? |
 
 ## Module responsibilities
 
@@ -182,17 +185,18 @@ smaller.
 | `fallback.rs` | Built-in offline records. |
 | `loading.rs` | Timed background source execution and completion notification. |
 | `diagnostics.rs` | Redacted support report without raw backend error messages. |
+| `command.rs` | Small application-command vocabulary with no UI toolkit types. |
 | `platform.rs` | `Speaker` port with macOS and null adapters. |
-| `tray.rs` | Procedural icon plus compact source status/reload/diagnostics controls. |
+| `tray.rs` | Menu construction, native-ID translation, state-aware labels, and icon pixels. |
 | `wake.rs` | Owned/cancellable worker for long repaint deadlines. |
-| `app.rs` | eframe lifecycle, menu polling, deck advance, render orchestration. |
-| `main.rs` | Choose concrete source/speaker, construct tray/window, run eframe. |
+| `app.rs` | eframe lifecycle, typed command handling, deck advance, render orchestration. |
+| `main.rs` | Choose concrete source/speaker/tray adapters, construct window, run eframe. |
 
 The 500-item audit intentionally calls out the remaining adapter debt: source
 attempts have manual retry but no cancellation/backoff/progress, platform
-path/font/display logic is still scattered, `App` still sees raw muda IDs and
-creates RNG/time directly, diagnostics cover only selected config/capabilities,
-and tray/worker shutdown lifecycles are not owned explicitly.
+path/font/display logic is still scattered, `App` creates RNG/time directly,
+diagnostics cover only selected config/capabilities, and tray/worker shutdown
+lifecycles are not owned explicitly.
 
 ## Runtime flow
 
@@ -201,23 +205,26 @@ and tray/worker shutdown lifecycles are not owned explicitly.
 1. `main` loads the grouped config.
 2. Normal mode immediately builds `Deck` from fallback words; benchmark mode
    uses one deterministic static record and never starts Mongo.
-3. It creates tray/menu IDs and the full-screen transparent viewport.
-4. Inside eframe setup it gives `SourceController` a launcher that runs
+3. `TrayMenu` constructs the native menu and owns its external-ID translation.
+4. Inside eframe setup the tray adapter starts one command forwarder and gives
+   `App` a receiver of domain-neutral `AppCommand` values.
+5. Setup gives `SourceController` a launcher that runs
    `WithFallback<MongoWordSource>` through the timed `loading` worker.
-5. It selects `SystemSpeaker` or `NullSpeaker` and constructs `App`.
-6. The first `App` advance renders fallback without waiting for remote I/O.
-7. Worker completion requests one repaint. `SourceController` retains the
+6. It selects `SystemSpeaker` or `NullSpeaker` and constructs `App`.
+7. The first `App` advance renders fallback without waiting for remote I/O.
+8. Worker completion requests one repaint. `SourceController` retains the
    report and health while `App` queues usable remote words or keeps the active
    deck on failure.
-8. The tray shows a disabled status row and enables Reload only when no attempt
-   or pending handoff is active.
-9. The next normal timer/menu advance installs queued words, then controller
+9. The tray shows source health, names the next Pause/Resume or Reload/Retry
+   effect, and disables reload while an attempt or pending handoff is active.
+10. The next normal timer/menu advance installs queued words, then controller
    marks that source active. The visible card never changes midway.
 
 ### Each frame
 
 1. `App` polls `SourceController` after its initial fallback advance.
-2. It consumes menu events, including safe reload and redacted diagnostics copy.
+2. It consumes typed application commands, including pause, safe reload, and
+   redacted diagnostics copy; native menu IDs never enter `App`.
 3. `SessionClock` decides whether the current word is due to advance.
 4. `timing` derives reveal delays, exit window, and repaint sleep.
 5. `Theme` and config create `CardContent`, `CardTimeline`, and `CardStyle`.
@@ -248,7 +255,8 @@ mid-fade frame cannot request 60 FPS forever.
 - **Interface segregation:** config is grouped by timing/appearance/learning/
   accessibility; rendering receives content/timeline/style contracts.
 - **Dependency inversion:** `App` depends on `Speaker`; `Deck` depends on
-  `WordSelector`; composition chooses concrete implementations.
+  `WordSelector`; `App` receives `AppCommand` rather than `muda::MenuId`;
+  composition chooses concrete implementations.
 - **DRY timing:** scheduler and renderer share the `timing` facade.
 - **DRY design:** semantic theme tokens are the only card palette/type/geometry
   source.
@@ -262,10 +270,11 @@ scattered `eprintln!`. These are tracked as #76-80, #363-364, and #338/#476.
 
 ## Verification
 
-The current suite has 77 unit tests covering config groups/parser,
+The current suite has 80 unit tests covering config groups/parser,
 deck/selector/replacement, session pause semantics, timing modules, themes,
-text helpers, timed source reports, retry/activation state, redaction, tray
-labels, and the background handoff. The standard local gate is:
+text helpers, timed source reports, retry/activation state, redaction, typed
+command mapping, state-aware tray labels, and the background handoff. The
+standard local gate is:
 
 ```sh
 cargo fmt --check

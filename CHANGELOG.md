@@ -7,6 +7,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- A domain-neutral `AppCommand` boundary with independently tested tray-ID
+  translation and one adapter-owned menu construction path.
+- State-aware tray verbs: `Pause` becomes `Resume`, while `Reload words` becomes
+  `Retry source` only when the latest source result warrants recovery.
 - `SourceController` lifecycle state with normal/degraded/retrying/failed health,
   retained last report, pending-vs-active deck tracking, and safe manual reload.
 - Compact tray source status, `Reload words`, and redacted `Copy diagnostics`
@@ -30,6 +34,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `font_scale`, `enhanced_contrast`, and `reduce_motion` accessibility controls.
 
 ### Changed
+- `App` now receives typed commands instead of depending on raw `muda::MenuId`
+  values, and tray state is synchronized through one compact presentation model.
 - Startup is fallback-first: the first card no longer waits for MongoDB, and a
   usable remote deck takes over on the next normal word change rather than
   replacing visible content midway.

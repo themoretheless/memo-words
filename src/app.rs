@@ -1,3 +1,4 @@
+use crate::command::AppCommand;
 use crate::config::Config;
 use crate::deck::Deck;
 use crate::diagnostics;
@@ -6,16 +7,15 @@ use crate::session::SessionClock;
 use crate::source::SourceController;
 use crate::theme::Theme;
 use crate::timing;
-use crate::tray::SourceMenu;
+use crate::tray::{TrayFeedback, TrayMenu, TrayState};
 use crate::ui::{CardContent, CardStyle, CardTimeline, CardView};
 use crate::wake::WakeScheduler;
 use eframe::egui;
-use muda::MenuEvent;
 use rand::RngExt;
 use rand::rng;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::mpsc::{Receiver, Sender};
+use std::sync::mpsc::Receiver;
 use std::time::{Duration, Instant};
 
 // Repaint cadence while a card is animating in (word -> transcription ->
@@ -27,18 +27,9 @@ const BENCH_SECS: u64 = 10;
 const BENCH_WARMUP_SECS: u64 = 2;
 const STATUS_FEEDBACK: Duration = Duration::from_secs(2);
 
-#[derive(Clone)]
-pub struct MenuIds {
-    pub next: muda::MenuId,
-    pub pause: muda::MenuId,
-    pub reload: muda::MenuId,
-    pub diagnostics: muda::MenuId,
-    pub quit: muda::MenuId,
-}
-
-/// The eframe adapter (a humble object): it owns the timing, tray-menu wiring,
-/// and rendering, and delegates word rotation to `Deck`. It deliberately holds
-/// no selection or word-storage logic of its own.
+/// The eframe adapter (a humble object): it owns timing and rendering, consumes
+/// domain-neutral commands, and delegates word rotation to `Deck`. It
+/// deliberately holds no native menu IDs, selection, or word-storage logic.
 pub struct App {
     deck: Deck,
     clock: SessionClock,
@@ -46,11 +37,9 @@ pub struct App {
     theme: Theme,
     wake_scheduler: Option<WakeScheduler>,
     started: bool,
-    menu_ids: MenuIds,
-    menu_tx: Option<Sender<muda::MenuId>>,
-    menu_rx: Receiver<muda::MenuId>,
+    command_rx: Receiver<AppCommand>,
     source: Option<SourceController>,
-    source_menu: Option<SourceMenu>,
+    tray_menu: Option<TrayMenu>,
     pending_words: Option<Vec<crate::model::Word>>,
     status_feedback_until: Option<Instant>,
     cfg: Config,
@@ -64,13 +53,12 @@ pub struct App {
 impl App {
     pub fn new(
         deck: Deck,
-        menu_ids: MenuIds,
+        command_rx: Receiver<AppCommand>,
         cfg: Config,
         source: Option<SourceController>,
-        source_menu: Option<SourceMenu>,
+        tray_menu: Option<TrayMenu>,
         speaker: Box<dyn Speaker>,
     ) -> Self {
-        let (menu_tx, menu_rx) = std::sync::mpsc::channel();
         let now = Instant::now();
         let theme = Theme::from_config(&cfg);
         let app = Self {
@@ -80,11 +68,9 @@ impl App {
             theme,
             wake_scheduler: None,
             started: false,
-            menu_ids,
-            menu_tx: Some(menu_tx),
-            menu_rx,
+            command_rx,
             source,
-            source_menu,
+            tray_menu,
             pending_words: None,
             status_feedback_until: None,
             cfg,
@@ -92,7 +78,7 @@ impl App {
             frames: Arc::new(AtomicUsize::new(0)),
             speaker,
         };
-        app.sync_source_menu();
+        app.sync_tray();
         app
     }
 
@@ -109,7 +95,7 @@ impl App {
             if let Some(source) = &mut self.source {
                 source.activate_pending();
             }
-            self.sync_source_menu();
+            self.sync_tray();
         }
         self.deck.advance();
         // Roll the interval against the new word's frequency so rare-word dwell
@@ -151,23 +137,6 @@ impl App {
         }
     }
 
-    // Forward tray-menu events to the UI thread and wake it. The UI loop sleeps
-    // through idle (see repaint scheduling), so it can't poll the menu itself;
-    // this thread blocks on the menu channel and pings the UI when a click
-    // arrives, which then handles quit/pause/next with full access to state.
-    fn spawn_menu_watcher(ctx: &egui::Context, tx: Sender<muda::MenuId>) {
-        let ctx = ctx.clone();
-        std::thread::spawn(move || {
-            let rx = MenuEvent::receiver();
-            while let Ok(event) = rx.recv() {
-                if tx.send(event.id().clone()).is_err() {
-                    break;
-                }
-                ctx.request_repaint();
-            }
-        });
-    }
-
     fn poll_source(&mut self) {
         let update = self.source.as_mut().and_then(SourceController::poll);
         let Some(update) = update else {
@@ -191,42 +160,78 @@ impl App {
             eprintln!("memo-words: background word source disconnected without a report");
         }
         self.status_feedback_until = None;
-        self.sync_source_menu();
+        self.sync_tray();
     }
 
     fn reload_source(&mut self) {
         if self.source.as_mut().is_some_and(SourceController::reload) {
             self.status_feedback_until = None;
-            self.sync_source_menu();
+            self.sync_tray();
         }
     }
 
     fn copy_diagnostics(&mut self, ctx: &egui::Context) {
         ctx.copy_text(diagnostics::build(&self.cfg, self.source.as_ref()));
         self.status_feedback_until = Some(Instant::now() + STATUS_FEEDBACK);
-        if let Some(menu) = &self.source_menu {
-            menu.show_copied();
-        }
+        self.sync_tray();
     }
 
-    fn restore_source_status(&mut self, now: Instant) {
+    fn restore_tray_status(&mut self, now: Instant) {
         if self
             .status_feedback_until
             .is_some_and(|deadline| now >= deadline)
         {
             self.status_feedback_until = None;
-            self.sync_source_menu();
+            self.sync_tray();
         }
     }
 
-    fn sync_source_menu(&self) {
-        let Some(menu) = &self.source_menu else {
+    fn sync_tray(&self) {
+        let Some(menu) = &self.tray_menu else {
             return;
         };
+        let feedback = self
+            .status_feedback_until
+            .map(|_| TrayFeedback::DiagnosticsCopied);
         if let Some(source) = &self.source {
-            menu.sync(source.status(), source.can_reload());
+            menu.sync(TrayState::runtime(
+                self.clock.is_paused(),
+                source.status(),
+                source.can_reload(),
+                source.retry_recommended(),
+                feedback,
+            ));
         } else {
-            menu.sync_benchmark();
+            menu.sync(TrayState::benchmark(self.clock.is_paused(), feedback));
+        }
+    }
+
+    fn handle_command(&mut self, command: AppCommand, ctx: &egui::Context) -> bool {
+        match command {
+            AppCommand::Quit => {
+                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                false
+            }
+            AppCommand::TogglePause => {
+                self.clock.toggle_pause(Instant::now());
+                if let Some(scheduler) = &mut self.wake_scheduler {
+                    scheduler.cancel();
+                }
+                self.sync_tray();
+                true
+            }
+            AppCommand::NextWord => {
+                self.advance();
+                true
+            }
+            AppCommand::ReloadSource => {
+                self.reload_source();
+                true
+            }
+            AppCommand::CopyDiagnostics => {
+                self.copy_diagnostics(ctx);
+                true
+            }
         }
     }
 }
@@ -244,7 +249,7 @@ impl eframe::App for App {
         if self.wake_scheduler.is_none() {
             self.wake_scheduler = Some(WakeScheduler::new(&ctx));
         }
-        self.restore_source_status(Instant::now());
+        self.restore_tray_status(Instant::now());
 
         if self.bench {
             self.frames.fetch_add(1, Ordering::Relaxed);
@@ -253,9 +258,6 @@ impl eframe::App for App {
         if !self.started {
             self.started = true;
             self.fill_screen(&ctx);
-            if let Some(tx) = self.menu_tx.take() {
-                Self::spawn_menu_watcher(&ctx, tx);
-            }
             self.advance();
 
             if self.bench {
@@ -289,21 +291,9 @@ impl eframe::App for App {
         // Loaded words are queued until the next normal advance.
         self.poll_source();
 
-        while let Ok(id) = self.menu_rx.try_recv() {
-            if id == self.menu_ids.quit {
-                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+        while let Ok(command) = self.command_rx.try_recv() {
+            if !self.handle_command(command, &ctx) {
                 return;
-            } else if id == self.menu_ids.pause {
-                self.clock.toggle_pause(Instant::now());
-                if let Some(scheduler) = &mut self.wake_scheduler {
-                    scheduler.cancel();
-                }
-            } else if id == self.menu_ids.next {
-                self.advance();
-            } else if id == self.menu_ids.reload {
-                self.reload_source();
-            } else if id == self.menu_ids.diagnostics {
-                self.copy_diagnostics(&ctx);
             }
         }
 
@@ -424,14 +414,8 @@ mod tests {
             })
             .collect();
         let deck = Deck::new(words, Box::new(FrequencyWeighted));
-        let ids = MenuIds {
-            next: muda::MenuId::from("next"),
-            pause: muda::MenuId::from("pause"),
-            reload: muda::MenuId::from("reload"),
-            diagnostics: muda::MenuId::from("diagnostics"),
-            quit: muda::MenuId::from("quit"),
-        };
-        App::new(deck, ids, cfg, None, None, speaker)
+        let (_command_tx, command_rx) = std::sync::mpsc::channel();
+        App::new(deck, command_rx, cfg, None, None, speaker)
     }
 
     // A test double that records the words it is asked to speak, so we can assert
@@ -494,6 +478,18 @@ mod tests {
         for _ in 0..1000 {
             assert!(app.roll_interval(1) >= Duration::from_secs(1));
         }
+    }
+
+    #[test]
+    fn pause_command_toggles_session_state() {
+        let mut app = test_app(1, Config::default());
+        let ctx = egui::Context::default();
+
+        assert!(!app.clock.is_paused());
+        assert!(app.handle_command(AppCommand::TogglePause, &ctx));
+        assert!(app.clock.is_paused());
+        assert!(app.handle_command(AppCommand::TogglePause, &ctx));
+        assert!(!app.clock.is_paused());
     }
 
     #[test]

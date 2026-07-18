@@ -1,43 +1,214 @@
+use crate::command::AppCommand;
 use crate::source::{SourceHealth, SourceStatus};
-use muda::MenuItem;
+use muda::{Menu, MenuEvent, MenuId, MenuItem, PredefinedMenuItem};
+use std::sync::mpsc::{self, Receiver};
 use tray_icon::Icon as TrayIcon;
 
 #[derive(Clone)]
-pub struct SourceMenu {
-    pub status: MenuItem,
-    pub reload: MenuItem,
-    pub diagnostics: MenuItem,
+pub struct TrayMenu {
+    status: MenuItem,
+    pause: MenuItem,
+    reload: MenuItem,
+    command_ids: CommandIds,
 }
 
-impl SourceMenu {
-    pub fn new(benchmark: bool) -> Self {
+pub struct TrayMenuBuild {
+    pub controls: TrayMenu,
+    pub menu: Menu,
+    pub warning: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TrayFeedback {
+    DiagnosticsCopied,
+}
+
+#[derive(Clone, Copy)]
+enum TraySource<'a> {
+    Benchmark,
+    Runtime {
+        status: &'a SourceStatus,
+        can_reload: bool,
+        retry_recommended: bool,
+    },
+}
+
+#[derive(Clone, Copy)]
+pub struct TrayState<'a> {
+    paused: bool,
+    source: TraySource<'a>,
+    feedback: Option<TrayFeedback>,
+}
+
+impl<'a> TrayState<'a> {
+    pub fn benchmark(paused: bool, feedback: Option<TrayFeedback>) -> Self {
         Self {
-            status: MenuItem::new(
-                if benchmark {
-                    "Source: Benchmark (1 word)"
-                } else {
-                    "Source: Loading..."
-                },
-                false,
-                None,
-            ),
-            reload: MenuItem::new("Reload words", false, None),
-            diagnostics: MenuItem::new("Copy diagnostics", true, None),
+            paused,
+            source: TraySource::Benchmark,
+            feedback,
         }
     }
 
-    pub fn sync(&self, status: &SourceStatus, can_reload: bool) {
-        self.status.set_text(source_label(status));
-        self.reload.set_enabled(can_reload);
+    pub fn runtime(
+        paused: bool,
+        status: &'a SourceStatus,
+        can_reload: bool,
+        retry_recommended: bool,
+        feedback: Option<TrayFeedback>,
+    ) -> Self {
+        Self {
+            paused,
+            source: TraySource::Runtime {
+                status,
+                can_reload,
+                retry_recommended,
+            },
+            feedback,
+        }
+    }
+}
+
+#[derive(Clone)]
+struct CommandIds {
+    next: MenuId,
+    pause: MenuId,
+    reload: MenuId,
+    diagnostics: MenuId,
+    quit: MenuId,
+}
+
+impl CommandIds {
+    fn resolve(&self, id: &MenuId) -> Option<AppCommand> {
+        if id == &self.next {
+            Some(AppCommand::NextWord)
+        } else if id == &self.pause {
+            Some(AppCommand::TogglePause)
+        } else if id == &self.reload {
+            Some(AppCommand::ReloadSource)
+        } else if id == &self.diagnostics {
+            Some(AppCommand::CopyDiagnostics)
+        } else if id == &self.quit {
+            Some(AppCommand::Quit)
+        } else {
+            None
+        }
+    }
+}
+
+impl TrayMenu {
+    pub fn build(benchmark: bool) -> TrayMenuBuild {
+        let status = MenuItem::new(
+            if benchmark {
+                "Source: Benchmark (1 word)"
+            } else {
+                "Source: Loading..."
+            },
+            false,
+            None,
+        );
+        let next = MenuItem::new("Next word", true, None);
+        let pause = MenuItem::new("Pause", true, None);
+        let reload = MenuItem::new("Reload words", false, None);
+        let diagnostics = MenuItem::new("Copy diagnostics", true, None);
+        let quit = MenuItem::new("Quit", true, None);
+        let separator_1 = PredefinedMenuItem::separator();
+        let separator_2 = PredefinedMenuItem::separator();
+        let separator_3 = PredefinedMenuItem::separator();
+        let menu = Menu::new();
+        let warning = menu
+            .append_items(&[
+                &status,
+                &separator_1,
+                &next,
+                &pause,
+                &separator_2,
+                &reload,
+                &diagnostics,
+                &separator_3,
+                &quit,
+            ])
+            .err()
+            .map(|error| error.to_string());
+        let command_ids = CommandIds {
+            next: next.id().clone(),
+            pause: pause.id().clone(),
+            reload: reload.id().clone(),
+            diagnostics: diagnostics.id().clone(),
+            quit: quit.id().clone(),
+        };
+
+        TrayMenuBuild {
+            controls: Self {
+                status,
+                pause,
+                reload,
+                command_ids,
+            },
+            menu,
+            warning,
+        }
     }
 
-    pub fn show_copied(&self) {
-        self.status.set_text("Diagnostics copied");
+    pub fn command_receiver<F>(&self, mut wake: F) -> Receiver<AppCommand>
+    where
+        F: FnMut() + Send + 'static,
+    {
+        let command_ids = self.command_ids.clone();
+        let (tx, rx) = mpsc::channel();
+        std::thread::spawn(move || {
+            let events = MenuEvent::receiver();
+            while let Ok(event) = events.recv() {
+                let Some(command) = command_ids.resolve(event.id()) else {
+                    continue;
+                };
+                if tx.send(command).is_err() {
+                    break;
+                }
+                wake();
+            }
+        });
+        rx
     }
 
-    pub fn sync_benchmark(&self) {
-        self.status.set_text("Source: Benchmark (1 word)");
-        self.reload.set_enabled(false);
+    pub fn sync(&self, state: TrayState<'_>) {
+        self.status.set_text(status_label(state));
+        self.pause.set_text(pause_label(state.paused));
+        match state.source {
+            TraySource::Benchmark => {
+                self.reload.set_text("Reload words");
+                self.reload.set_enabled(false);
+            }
+            TraySource::Runtime {
+                can_reload,
+                retry_recommended,
+                ..
+            } => {
+                self.reload.set_text(reload_label(retry_recommended));
+                self.reload.set_enabled(can_reload);
+            }
+        }
+    }
+}
+
+fn status_label(state: TrayState<'_>) -> String {
+    if state.feedback == Some(TrayFeedback::DiagnosticsCopied) {
+        return "Diagnostics copied".to_string();
+    }
+    match state.source {
+        TraySource::Benchmark => "Source: Benchmark (1 word)".to_string(),
+        TraySource::Runtime { status, .. } => source_label(status),
+    }
+}
+
+fn pause_label(paused: bool) -> &'static str {
+    if paused { "Resume" } else { "Pause" }
+}
+
+fn reload_label(retry_recommended: bool) -> &'static str {
+    if retry_recommended {
+        "Retry source"
+    } else {
+        "Reload words"
     }
 }
 
@@ -176,5 +347,43 @@ mod tests {
             words: 2,
         };
         assert_eq!(source_label(&failed), "Source: MongoDB (load failed)");
+    }
+
+    #[test]
+    fn action_labels_always_name_the_next_effect() {
+        assert_eq!(pause_label(false), "Pause");
+        assert_eq!(pause_label(true), "Resume");
+        assert_eq!(reload_label(false), "Reload words");
+        assert_eq!(reload_label(true), "Retry source");
+    }
+
+    #[test]
+    fn external_menu_ids_resolve_to_domain_commands() {
+        let ids = CommandIds {
+            next: MenuId::from("next"),
+            pause: MenuId::from("pause"),
+            reload: MenuId::from("reload"),
+            diagnostics: MenuId::from("diagnostics"),
+            quit: MenuId::from("quit"),
+        };
+
+        assert_eq!(
+            ids.resolve(&MenuId::from("next")),
+            Some(AppCommand::NextWord)
+        );
+        assert_eq!(
+            ids.resolve(&MenuId::from("pause")),
+            Some(AppCommand::TogglePause)
+        );
+        assert_eq!(
+            ids.resolve(&MenuId::from("reload")),
+            Some(AppCommand::ReloadSource)
+        );
+        assert_eq!(
+            ids.resolve(&MenuId::from("diagnostics")),
+            Some(AppCommand::CopyDiagnostics)
+        );
+        assert_eq!(ids.resolve(&MenuId::from("quit")), Some(AppCommand::Quit));
+        assert_eq!(ids.resolve(&MenuId::from("unknown")), None);
     }
 }

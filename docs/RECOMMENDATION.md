@@ -257,7 +257,7 @@ observed **Problem/Risk** from an **Improvement/Idea**.
 | 176 | P1 | Risk | Interval, reveal delays, and fades can form incoherent timelines. | Validate cross-field relationships and report adjustments. |
 | 177 | P1 | Risk | Translation can be configured to reveal after the word swaps. | Clamp or warn when reveal exceeds effective dwell. |
 | 178 | P1 | Risk | Example reveal can also occur after the swap. | Derive a bounded timeline from one validated policy. |
-| 179 | P1 | Improvement | Pause state is not reflected in tray text. | Update the control label and optional status line immediately. |
+| 179 | P1 | Improvement | Pause is reflected by the `Resume` verb, but copied diagnostics omit paused state and frozen due time. | Add a redacted session-clock snapshot to support output. |
 | 180 | P1 | Risk | System sleep/wake semantics are undefined. | Decide whether elapsed wall time advances or freezes and test it. |
 | 181 | P1 | Risk | Clock changes are untested for any future persisted schedule. | Separate monotonic presentation time from UTC review time. |
 | 182 | P1 | Improvement | Next Word during pause has no documented timer semantics. | Specify and test whether pause remains and the new card is frozen. |
@@ -344,7 +344,7 @@ observed **Problem/Risk** from an **Improvement/Idea**.
 
 | # | Pri | Kind | Finding | Recommended action |
 |---:|:---:|---|---|---|
-| 251 | P1 | Problem | The Pause/Resume menu label never reflects current state. | Set the item text to the next available action. |
+| 251 | P1 | Improvement | The dynamic `Resume` verb is visible only when the tray opens and has no accessibility announcement policy. | Expose pause transitions through the native accessible control surface without card toasts. |
 | 252 | P1 | Improvement | Tray now shows source/deck state but omits pause, current word, and next due time. | Add only the highest-value state to a compact submenu or detail view. |
 | 253 | P1 | Problem | Config changes require restart. | Add validated reload and atomic apply behavior. |
 | 254 | P1 | Problem | There is no preferences window. | Build a compact, keyboard-accessible settings surface. |
@@ -355,9 +355,9 @@ observed **Problem/Risk** from an **Improvement/Idea**.
 | 259 | P1 | Improvement | Theme changes require file edit and restart. | Add a Theme submenu or preferences preview. |
 | 260 | P1 | Improvement | Interval changes are inaccessible during use. | Offer a few named cadence presets plus Custom in preferences. |
 | 261 | P1 | Improvement | Reload has loading/result feedback but no progress, cancellation, or last-success age. | Extend the controller lifecycle without making the tray row noisy. |
-| 262 | P1 | Improvement | Reload works after fallback, but its label does not become Retry or explain the last failure. | Adapt command copy to lifecycle state while preserving a stable menu ID. |
-| 263 | P2 | Risk | Menu commands are compared through raw external IDs in `App`. | Map them once to a small application command enum. |
-| 264 | P2 | Improvement | Menu state cannot be unit-tested without muda IDs. | Put command interpretation behind an adapter. |
+| 262 | P1 | Improvement | `Retry source` now reflects recovery state but omits the safe failure category. | Show a redacted reason in source details rather than lengthening the top-level verb. |
+| 263 | P2 | Risk | Native-ID mapping is a fixed chain with no declarative completeness link to menu construction. | Define each item, command, and initial state once in a compact menu specification. |
+| 264 | P2 | Improvement | Pure command/label rules are tested, but actual native `MenuItem` mutation is not. | Add an adapter harness for text/enabled-state synchronization. |
 | 265 | P2 | Improvement | Next Word has no optional keyboard shortcut display. | Register shortcuts and let native menu rendering show them. |
 | 266 | P2 | Improvement | Quit offers no state-flush feedback once persistence exists. | Flush safely and report unrecoverable save failure. |
 | 267 | P2 | Improvement | There is no Open Config/Open Data Folder command. | Add platform-resolved paths to an Advanced submenu. |
@@ -464,11 +464,11 @@ observed **Problem/Risk** from an **Improvement/Idea**.
 
 | # | Pri | Kind | Finding | Recommended action |
 |---:|:---:|---|---|---|
-| 351 | P1 | Problem | `App` still owns menu polling, benchmark logic, screen setup, cadence, and rendering. | Extract application commands, benchmark adapter, and viewport controller. |
-| 352 | P1 | Problem | `main.rs` constructs tray menus procedurally. | Move tray creation into an adapter returning command IDs/handle. |
+| 351 | P1 | Problem | After command extraction, `App` still owns benchmark logic, viewport setup, cadence, source orchestration, and rendering. | Extract the benchmark adapter and viewport controller next. |
+| 352 | P1 | Risk | `TrayMenu` owns construction, but a partial append returns only a string and may expose an incomplete menu. | Return a structured capability result and test failed assembly steps. |
 | 353 | P1 | Problem | `platform.rs` contains only speech while paths/fonts/display logic is scattered. | Define narrow platform ports by capability. |
 | 354 | P1 | Problem | `WordSource` expresses outcomes and metadata but has no cancellation contract. | Add a small cancellation/lifecycle port before supporting repeated loads. |
-| 355 | P1 | Risk | `App` depends directly on `muda::MenuId`. | Translate adapter events into a domain-neutral command enum. |
+| 355 | P1 | Risk | `App` is free of `muda`, but the tray event forwarder remains a detached global-channel worker. | Return an owned handle with explicit shutdown behavior. |
 | 356 | P1 | Risk | `App` creates randomness directly with `rand::rng()`. | Inject an interval-jitter policy or RNG facade. |
 | 357 | P1 | Risk | `App` calls `Instant::now()` directly despite a testable session clock. | Inject a clock at the orchestration boundary. |
 | 358 | P1 | Risk | `Theme` is coupled to egui color/shadow types. | Keep render tokens in the render layer and isolate pure palette math if reused. |
@@ -482,7 +482,7 @@ observed **Problem/Risk** from an **Improvement/Idea**.
 | 366 | P2 | Improvement | Boxed selector dispatch is used where generic/static composition may suffice. | Benchmark and choose based on extension needs, documenting the tradeoff. |
 | 367 | P2 | Risk | Module boundaries are documented but not dependency-tested. | Add a check that core modules do not import UI/OS/database crates. |
 | 368 | P2 | Improvement | No library crate exposes the pure core for integration tests/tools. | Move domain modules to `lib.rs`, keep `main.rs` as composition root. |
-| 369 | P2 | Improvement | Application commands have no central enum/state transition function. | Introduce command handling independent of tray transport. |
+| 369 | P2 | Improvement | `AppCommand` is central, but effects still execute inside egui-bound `App::handle_command`. | Return explicit app effects so pure transition tests need no egui context. |
 | 370 | P2 | Risk | Worker lifecycle ownership is implicit across App/platform/source. | Add explicit handles, cancellation, and shutdown ordering. |
 | 371 | P2 | Improvement | Error presentation policy is duplicated through `eprintln!`. | Centralize reporting while preserving typed errors. |
 | 372 | P2 | Improvement | Architecture decisions live mainly in prose and commit history. | Add ADRs for overlay shape, source fallback, storage, and scheduling. |
@@ -501,7 +501,7 @@ observed **Problem/Risk** from an **Improvement/Idea**.
 | 380 | P1 | Problem | Mongo success/failure/malformed-cursor paths lack adapter tests. | Use a controlled test backend or extract cursor mapping. |
 | 381 | P1 | Problem | Config path precedence is not tested with isolated environment/filesystem. | Inject path/env providers and test all lookup outcomes. |
 | 382 | P1 | Risk | App pause tests cover `SessionClock`, not the full command/render path. | Add orchestration tests with fake clock and commands. |
-| 383 | P1 | Risk | Next/Pause/Quit command mapping is not unit-tested independently. | Introduce a command enum and adapter tests. |
+| 383 | P1 | Risk | Native-ID mapping is unit-tested, but command delivery, repaint wake, and Quit lack an integration test. | Add a macOS tray smoke harness around the typed receiver. |
 | 384 | P1 | Problem | Tray partial-failure behavior has no tests. | Abstract tray construction and simulate failed menu/icon steps. |
 | 385 | P1 | Problem | Font fallback/coverage behavior has no tests. | Inject font candidates and verify selected coverage/reporting. |
 | 386 | P1 | Risk | Long word/translation fitting has only arithmetic helper coverage. | Render extreme multilingual fixtures and assert bounds. |
@@ -647,7 +647,7 @@ observed **Problem/Risk** from an **Improvement/Idea**.
 3. Define review events and a simple due-card scheduler (#2, #26-35, #151).
 4. Replace the hard-coded viewport with monitor/usable-frame handling (#276-281).
 5. Add a tray-opened preferences surface and live theme preview (#4, #208, #254).
-6. Translate raw `MenuId` values to application commands (#263-264, #355, #369).
+6. Own tray-worker shutdown and add native command smoke coverage (#255, #334, #352, #355, #370, #383-384).
 7. Move platform paths/fonts/display/speech behind focused ports (#282-288, #353).
 8. Serialize and cancel speech through one worker (#183, #245, #284, #306-307).
 9. Generate fallback and Mongo seed from one validated deck asset (#76-80, #390).

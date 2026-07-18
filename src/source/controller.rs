@@ -84,6 +84,16 @@ impl SourceController {
         self.latest_report.as_ref()
     }
 
+    pub fn retry_recommended(&self) -> bool {
+        self.status.health == SourceHealth::Failed
+            || self.latest_report.as_ref().is_some_and(|report| {
+                matches!(
+                    report.outcome,
+                    LoadOutcome::Fallback | LoadOutcome::Empty | LoadOutcome::Failed
+                )
+            })
+    }
+
     pub fn can_reload(&self) -> bool {
         self.receiver.is_none() && self.status.pending.is_none()
     }
@@ -208,6 +218,7 @@ mod tests {
         assert_eq!(controller.status.pending.unwrap().kind, SourceKind::Mongo);
         assert_eq!(controller.latest_report().unwrap().loaded, 2);
         assert!(controller.latest_report().unwrap().words.is_empty());
+        assert!(!controller.retry_recommended());
         assert!(!controller.can_reload());
 
         assert!(controller.activate_pending());
@@ -236,6 +247,7 @@ mod tests {
             controller.latest_report().unwrap().outcome,
             LoadOutcome::Fallback
         );
+        assert!(controller.retry_recommended());
     }
 
     #[test]
@@ -253,6 +265,7 @@ mod tests {
         assert_eq!(controller.status.health, SourceHealth::Failed);
         assert_eq!(controller.status.active.kind, SourceKind::Fallback);
         assert_eq!(controller.status.active.words, 40);
+        assert!(controller.retry_recommended());
         assert!(controller.can_reload());
     }
 }

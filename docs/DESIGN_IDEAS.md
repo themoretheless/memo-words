@@ -60,6 +60,11 @@ calm-ambient identity (heavy motion, chrome, interactivity) are downranked.
   `reduce_motion` disables settle, exit fade, and width morphing while retaining
   opacity reveal. System preference auto-detection remains backlog. (macOS
   accessibility, WCAG motion guidance)
+- **State-aware tray commands** - native menu IDs are translated into five typed
+  application commands; `Pause`/`Resume` and `Reload words`/`Retry source` always
+  name the next effect. One compact state model updates text and availability
+  without adding card chrome or idle frames. (VS Code command enablement,
+  macOS menu conventions)
 
 ## Top 10 (round 2)
 
@@ -203,3 +208,22 @@ ideas, fourteen macOS-integration ideas, and so on).
 > does not exist yet. Round 3's wide sweep confirms the cheap on-concept wins now
 > cluster in accessibility and pacing (config-only, shippable), while the deepest
 > learning levers remain gated on a persistence primitive.
+
+## Top 10 (round 4: calm control surface)
+
+Ten new ideas derived from the current typed-command boundary and editor control
+patterns. They are ranked by user value, but every idea must keep the overlay
+click-through, preserve predictable native-menu ordering, and add zero idle work.
+
+| # | Idea | Inspired by | Value | Effort | UX guardrail |
+|---:|---|---|:---:|:---:|---|
+| 1 | **Undo last skip** - keep one in-memory previous-card slot so an accidental Next can be reversed | editor navigation undo | High | M | One step only; never imply durable history |
+| 2 | **Hold one more interval** - extend only the current card once without changing global cadence | pinned editor previews | High | S | Automatically clears on advance |
+| 3 | **Pause after this card** - queue pause at the natural card boundary instead of freezing mid-reveal | breakpoint stop-after semantics | Med | M | Status must clearly say the pause is queued |
+| 4 | **Safe retry reason** - show a short redacted issue kind such as connection or decode in source details | editor Problems panels | High | S | Never place backend messages or endpoints in menu text |
+| 5 | **Use built-in deck for this session** - explicitly lock to fallback until restart | editor restricted/offline modes | Med | M | Temporary and visibly reversible; do not mutate config |
+| 6 | **Deck-change summary** - after reload, report added/removed/changed counts before the next-card handoff | source-control diff summaries | Med | M | Counts only; no modal confirmation in normal flow |
+| 7 | **External-config change indicator** - detect an edited config and offer Apply or Keep current settings | editor file-change conflict bars | High | L | Validate the whole candidate before exposing Apply |
+| 8 | **Repeat pronunciation** - replay the current word without advancing it | editor Run Again commands | Med | M | Requires the bounded speech worker first |
+| 9 | **Command acknowledgement line** - briefly reuse the disabled status row for Paused, Reload started, or Word advanced | IDE status bars | Med | S | One message, two seconds, no notification/toast stack |
+| 10 | **Top-level action budget** - cap the root tray at seven actions and move future low-frequency tools into stable submenus | command palettes and editor menus | High | S | Never reorder commands by usage; preserve muscle memory |

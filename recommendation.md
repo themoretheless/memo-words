@@ -5,9 +5,9 @@ The canonical audit of exactly 500 problems, risks, improvements, and ideas is
 25 actionable entries and ends with the best next 20 moves.
 
 The current pass is synchronized with fallback-first startup, retained source
-health, manual reload, and redacted tray diagnostics. Completed findings were
-replaced by still-open risks while the canonical register remains exactly 500
-rows.
+health, typed tray commands, contextual Pause/Retry verbs, and redacted
+diagnostics. Completed findings were replaced by still-open risks while the
+canonical register remains exactly 500 rows.
 
 This root-level alias exists so quick links to `recommendation.md` keep working
 without duplicating 500 rows and creating a second source of truth.
