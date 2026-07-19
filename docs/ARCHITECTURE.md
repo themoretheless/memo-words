@@ -38,12 +38,14 @@ main.rs (composition root)
   |-- diagnostics.rs -------------> config.rs + source/controller.rs
   |-- command.rs (AppCommand)
   |-- deck.rs --------------------> model.rs + selector.rs
-  |-- platform.rs (Speaker)
+  |-- platform.rs (Speaker, state path)
+  |-- store.rs (ProgressStore port + file/null stores)
   |-- tray.rs --------------------> command.rs + source/controller.rs
   `-- app.rs (eframe adapter)
        |-- command.rs (typed command input)
        |-- deck.rs
        |-- source.rs (SourceController)
+       |-- store.rs (ProgressStore)
        |-- diagnostics.rs / tray.rs
        |-- session.rs
        |-- wake.rs (owned long-deadline worker)
@@ -186,7 +188,8 @@ smaller.
 | `loading.rs` | Timed background source execution and completion notification. |
 | `diagnostics.rs` | Redacted support report without raw backend error messages. |
 | `command.rs` | Small application-command vocabulary with no UI toolkit types. |
-| `platform.rs` | `Speaker` port with macOS and null adapters. |
+| `platform.rs` | `Speaker` port with macOS and null adapters, plus the per-platform state-file path. |
+| `store.rs` | `ProgressStore` port with file (atomic, quarantining) and null stores; the versioned per-word progress state. |
 | `tray.rs` | Menu construction, native-ID translation, state-aware labels, and icon pixels. |
 | `wake.rs` | Owned/cancellable worker for long repaint deadlines. |
 | `app.rs` | eframe lifecycle, typed command handling, deck advance, render orchestration. |
@@ -210,7 +213,9 @@ lifecycles are not owned explicitly.
    `App` a receiver of domain-neutral `AppCommand` values.
 5. Setup gives `SourceController` a launcher that runs
    `WithFallback<MongoWordSource>` through the timed `loading` worker.
-6. It selects `SystemSpeaker` or `NullSpeaker` and constructs `App`.
+6. It selects `SystemSpeaker` or `NullSpeaker`, plus `FileProgressStore` (or the
+   null store in benchmark mode), and constructs `App`, which loads persisted
+   learning progress through the store port.
 7. The first `App` advance renders fallback without waiting for remote I/O.
 8. Worker completion requests one repaint. `SourceController` retains the
    report and health while `App` queues usable remote words or keeps the active

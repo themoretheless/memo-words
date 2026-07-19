@@ -2,10 +2,11 @@
 
 use crate::config::Config;
 use crate::source::SourceController;
+use crate::store::ProgressState;
 use std::fmt::Write;
 use std::time::UNIX_EPOCH;
 
-pub fn build(cfg: &Config, source: Option<&SourceController>) -> String {
+pub fn build(cfg: &Config, source: Option<&SourceController>, progress: &ProgressState) -> String {
     let mut output = String::new();
     let _ = writeln!(output, "memo_words.version={}", env!("CARGO_PKG_VERSION"));
     let _ = writeln!(output, "runtime.os={}", std::env::consts::OS);
@@ -17,6 +18,14 @@ pub fn build(cfg: &Config, source: Option<&SourceController>) -> String {
         output,
         "config.reduce_motion={}",
         cfg.accessibility.reduce_motion
+    );
+    // Counts only: which words the user is learning stays private.
+    let _ = writeln!(output, "progress.schema={}", progress.schema_version);
+    let _ = writeln!(output, "progress.tracked_words={}", progress.words.len());
+    let _ = writeln!(
+        output,
+        "progress.total_exposures={}",
+        progress.total_exposures()
     );
 
     let Some(source) = source else {
@@ -122,13 +131,20 @@ mod tests {
         );
         source.poll().unwrap();
 
-        let output = build(&Config::default(), Some(&source));
+        let mut progress = ProgressState::default();
+        progress.record_exposure("секретное-слово", 100);
+        progress.record_exposure("секретное-слово", 200);
+        let output = build(&Config::default(), Some(&source), &progress);
 
         assert!(output.contains("source.health=degraded"));
         assert!(output.contains("source.report_attempt=1"));
         assert!(output.contains("source.issue_kinds=connection"));
         assert!(output.contains("source.elapsed_ms=25"));
+        assert!(output.contains("progress.tracked_words=1"));
+        assert!(output.contains("progress.total_exposures=2"));
         assert!(!output.contains("secret"));
         assert!(!output.contains("private-host"));
+        // Learning history is personal: counts appear, the words never do.
+        assert!(!output.contains("секретное-слово"));
     }
 }

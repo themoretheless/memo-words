@@ -5,6 +5,7 @@ use crate::diagnostics;
 use crate::platform::Speaker;
 use crate::session::SessionClock;
 use crate::source::SourceController;
+use crate::store::{ProgressState, ProgressStore};
 use crate::theme::Theme;
 use crate::timing;
 use crate::tray::{TrayFeedback, TrayMenu, TrayState};
@@ -27,6 +28,12 @@ const BENCH_SECS: u64 = 10;
 const BENCH_WARMUP_SECS: u64 = 2;
 const STATUS_FEEDBACK: Duration = Duration::from_secs(2);
 
+// Dirty progress is flushed to disk at most this often (plus always on quit
+// and drop), coalescing exposure counters into one small write instead of one
+// per word swap. Flushing happens inside frames the app is already painting,
+// so it never wakes an idle overlay.
+const PROGRESS_FLUSH_INTERVAL: Duration = Duration::from_secs(60);
+
 /// The eframe adapter (a humble object): it owns timing and rendering, consumes
 /// domain-neutral commands, and delegates word rotation to `Deck`. It
 /// deliberately holds no native menu IDs, selection, or word-storage logic.
@@ -48,6 +55,12 @@ pub struct App {
     // The TTS port. `App` depends on the capability, not the OS mechanism, so the
     // composition root chooses the real speaker and tests inject a double.
     speaker: Box<dyn Speaker>,
+    // The persistence port and the in-memory learning state it loads/saves.
+    // Same inversion as the speaker: the composition root picks file vs no-op.
+    store: Box<dyn ProgressStore>,
+    progress: ProgressState,
+    progress_dirty: bool,
+    last_progress_flush: Instant,
 }
 
 impl App {
@@ -58,9 +71,11 @@ impl App {
         source: Option<SourceController>,
         tray_menu: Option<TrayMenu>,
         speaker: Box<dyn Speaker>,
+        store: Box<dyn ProgressStore>,
     ) -> Self {
         let now = Instant::now();
         let theme = Theme::from_config(&cfg);
+        let progress = store.load();
         let app = Self {
             deck,
             clock: SessionClock::new(now, Duration::from_secs(cfg.timing.interval_secs)),
@@ -77,6 +92,10 @@ impl App {
             bench: std::env::var("MEMO_BENCH").is_ok(),
             frames: Arc::new(AtomicUsize::new(0)),
             speaker,
+            store,
+            progress,
+            progress_dirty: false,
+            last_progress_flush: now,
         };
         app.sync_tray();
         app
@@ -110,6 +129,33 @@ impl App {
         // composition root's choice of speaker (System vs Null), not App's job.
         if let Some(w) = self.deck.current() {
             self.speaker.speak(&w.word);
+            self.progress
+                .record_exposure(&w.word, crate::store::unix_now());
+            self.progress_dirty = true;
+        }
+    }
+
+    /// Write dirty progress through the store port, unconditionally. Failures
+    /// are logged, not fatal: a broken disk must never take down the overlay.
+    fn flush_progress(&mut self) {
+        if !self.progress_dirty {
+            return;
+        }
+        if let Err(e) = self.store.save(&self.progress) {
+            eprintln!("memo-words: could not save learning progress: {e}");
+        } else {
+            self.progress_dirty = false;
+        }
+        self.last_progress_flush = Instant::now();
+    }
+
+    /// Flush on the coalescing cadence. Called from frames the app is already
+    /// painting, so it adds no wakeups to an idle overlay.
+    fn maybe_flush_progress(&mut self, now: Instant) {
+        if self.progress_dirty
+            && now.saturating_duration_since(self.last_progress_flush) >= PROGRESS_FLUSH_INTERVAL
+        {
+            self.flush_progress();
         }
     }
 
@@ -171,7 +217,11 @@ impl App {
     }
 
     fn copy_diagnostics(&mut self, ctx: &egui::Context) {
-        ctx.copy_text(diagnostics::build(&self.cfg, self.source.as_ref()));
+        ctx.copy_text(diagnostics::build(
+            &self.cfg,
+            self.source.as_ref(),
+            &self.progress,
+        ));
         self.status_feedback_until = Some(Instant::now() + STATUS_FEEDBACK);
         self.sync_tray();
     }
@@ -209,6 +259,9 @@ impl App {
     fn handle_command(&mut self, command: AppCommand, ctx: &egui::Context) -> bool {
         match command {
             AppCommand::Quit => {
+                // Flush before the close command; Drop is the backstop for
+                // exits that never pass through here (window manager close).
+                self.flush_progress();
                 ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                 false
             }
@@ -233,6 +286,14 @@ impl App {
                 true
             }
         }
+    }
+}
+
+impl Drop for App {
+    fn drop(&mut self) {
+        // eframe drops the App on every orderly shutdown path, so this is the
+        // last-chance flush for exits that skip the Quit command.
+        self.flush_progress();
     }
 }
 
@@ -301,6 +362,7 @@ impl eframe::App for App {
         if self.clock.is_due(now) {
             self.advance();
         }
+        self.maybe_flush_progress(now);
 
         let now = Instant::now();
         let elapsed = self.clock.elapsed(now).as_secs_f32();
@@ -404,6 +466,15 @@ mod tests {
     }
 
     fn test_app_with_speaker(n: usize, cfg: Config, speaker: Box<dyn Speaker>) -> App {
+        test_app_with_ports(n, cfg, speaker, Box::new(crate::store::NullProgressStore))
+    }
+
+    fn test_app_with_ports(
+        n: usize,
+        cfg: Config,
+        speaker: Box<dyn Speaker>,
+        store: Box<dyn ProgressStore>,
+    ) -> App {
         let words = (0..n)
             .map(|i| Word {
                 word: format!("w{i}"),
@@ -415,7 +486,7 @@ mod tests {
             .collect();
         let deck = Deck::new(words, Box::new(FrequencyWeighted));
         let (_command_tx, command_rx) = std::sync::mpsc::channel();
-        App::new(deck, command_rx, cfg, None, None, speaker)
+        App::new(deck, command_rx, cfg, None, None, speaker, store)
     }
 
     // A test double that records the words it is asked to speak, so we can assert
@@ -425,6 +496,24 @@ mod tests {
     impl Speaker for RecordingSpeaker {
         fn speak(&self, word: &str) {
             self.0.lock().unwrap().push(word.to_string());
+        }
+    }
+
+    // A store double that counts saves and keeps the last saved state, so tests
+    // can assert flush behaviour without touching the filesystem.
+    #[derive(Clone, Default)]
+    struct RecordingStore {
+        saves: Arc<Mutex<Vec<ProgressState>>>,
+    }
+
+    impl ProgressStore for RecordingStore {
+        fn load(&self) -> ProgressState {
+            ProgressState::default()
+        }
+
+        fn save(&self, state: &ProgressState) -> std::io::Result<()> {
+            self.saves.lock().unwrap().push(state.clone());
+            Ok(())
         }
     }
 
@@ -478,6 +567,76 @@ mod tests {
         for _ in 0..1000 {
             assert!(app.roll_interval(1) >= Duration::from_secs(1));
         }
+    }
+
+    #[test]
+    fn advance_records_one_exposure_per_shown_word() {
+        let mut app = test_app(3, Config::default());
+        app.advance();
+        app.advance();
+        app.advance();
+        assert_eq!(app.progress.total_exposures(), 3);
+        assert!(
+            app.progress_dirty,
+            "recorded exposure must mark state dirty"
+        );
+        // Every exposure belongs to a real deck word.
+        assert!(app.progress.words.keys().all(|w| w.starts_with('w')));
+    }
+
+    #[test]
+    fn quit_flushes_progress_through_the_store_port() {
+        let store = RecordingStore::default();
+        let mut app = test_app_with_ports(
+            3,
+            Config::default(),
+            Box::new(NullSpeaker),
+            Box::new(store.clone()),
+        );
+        app.advance();
+        assert!(store.saves.lock().unwrap().is_empty(), "no eager saves");
+
+        let ctx = egui::Context::default();
+        assert!(!app.handle_command(AppCommand::Quit, &ctx));
+        let saves = store.saves.lock().unwrap();
+        assert_eq!(saves.len(), 1, "quit must flush exactly once");
+        assert_eq!(saves[0].total_exposures(), 1);
+        assert!(!app.progress_dirty);
+    }
+
+    #[test]
+    fn drop_flushes_dirty_progress_as_a_backstop() {
+        let store = RecordingStore::default();
+        {
+            let mut app = test_app_with_ports(
+                3,
+                Config::default(),
+                Box::new(NullSpeaker),
+                Box::new(store.clone()),
+            );
+            app.advance();
+            app.advance();
+        } // App dropped here without a Quit command.
+        let saves = store.saves.lock().unwrap();
+        assert_eq!(saves.len(), 1);
+        assert_eq!(saves[0].total_exposures(), 2);
+    }
+
+    #[test]
+    fn clean_state_is_not_rewritten_on_drop() {
+        let store = RecordingStore::default();
+        {
+            let _app = test_app_with_ports(
+                3,
+                Config::default(),
+                Box::new(NullSpeaker),
+                Box::new(store.clone()),
+            );
+        } // Dropped with nothing recorded.
+        assert!(
+            store.saves.lock().unwrap().is_empty(),
+            "a clean state must not be rewritten"
+        );
     }
 
     #[test]

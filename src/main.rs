@@ -10,6 +10,7 @@ mod platform;
 mod selector;
 mod session;
 mod source;
+mod store;
 mod theme;
 mod timing;
 mod tray;
@@ -112,6 +113,22 @@ fn main() -> eframe::Result<()> {
             } else {
                 Box::new(platform::NullSpeaker)
             };
+            // Same inversion for persistence: a JSON file store normally, a
+            // no-op in benchmark mode (hermetic runs) or when no data path
+            // exists (progress just doesn't persist that session).
+            let store: Box<dyn store::ProgressStore> = if bench {
+                Box::new(store::NullProgressStore)
+            } else {
+                match platform::state_file_path() {
+                    Some(path) => Box::new(store::FileProgressStore::new(path)),
+                    None => {
+                        eprintln!(
+                            "memo-words: no data directory found; learning progress will not persist this session."
+                        );
+                        Box::new(store::NullProgressStore)
+                    }
+                }
+            };
             Ok(Box::new(app::App::new(
                 deck,
                 command_rx,
@@ -119,6 +136,7 @@ fn main() -> eframe::Result<()> {
                 source,
                 Some(tray_menu.clone()),
                 speaker,
+                store,
             )))
         }),
     )

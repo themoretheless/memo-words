@@ -154,12 +154,28 @@ speak = true
   backend error messages are deliberately excluded.
 - **Quit** - exit the app.
 
+## Learning progress
+
+The app remembers how often each word has been shown, across restarts. Progress
+is saved as a small JSON file (`progress.json`):
+
+- macOS: `~/Library/Application Support/memo-words/progress.json`
+- elsewhere: `$XDG_DATA_HOME/memo-words/` or `~/.local/share/memo-words/`
+
+Today this is exposure history (count, first/last seen per word) - the
+foundation the upcoming review scheduler builds on. The file is created
+user-readable only; delete it to reset progress. A corrupt file is set aside as
+`progress.json.corrupt` and the app starts fresh rather than failing.
+
 ## Environment variables
 
 - `MEMO_CONFIG` - path to a config file (overrides the default location).
+- `MEMO_STATE` - path to the learning-progress file (overrides the default
+  location above).
 - `MEMO_BENCH` - benchmark mode: shows one pinned card, counts rendered frames
   over a fixed idle window, prints `BENCH frames=N fps=N` to stderr, and exits.
-  Used to measure idle repaint cost.
+  Used to measure idle repaint cost. Benchmark runs never read or write
+  learning progress.
 
 ## Platform notes
 

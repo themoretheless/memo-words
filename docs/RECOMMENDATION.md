@@ -194,25 +194,25 @@ observed **Problem/Risk** from an **Improvement/Idea**.
 
 | # | Pri | Kind | Finding | Recommended action |
 |---:|:---:|---|---|---|
-| 126 | P0 | Problem | There is no `Store` port in the domain. | Define minimal load/save transaction interfaces before choosing storage. |
+| 126 | P0 | Fixed | `store::ProgressStore` (load/save port) landed with file and no-op implementations; exposure counts persist across sessions. | Extend the persisted record with review grades and due dates as the scheduler lands. |
 | 127 | P0 | Risk | Adding persistence without stable IDs would misattach history. | Land ID/version migrations before recording progress. |
-| 128 | P1 | Improvement | State has no versioned envelope. | Include schema version, app version, and migration metadata. |
-| 129 | P1 | Risk | There is no atomic-write strategy. | Write temp, fsync where appropriate, then rename atomically. |
-| 130 | P1 | Risk | Corrupted state has no recovery path. | Validate, quarantine the bad file, and restore the last backup. |
-| 131 | P1 | Improvement | Storage location is not abstracted by platform. | Add a platform path provider for state, cache, config, and logs. |
+| 128 | P1 | Fixed | `ProgressState` carries `schema_version` + `app_version`, and unknown fields survive loading (forward-compatible). | Add explicit migration branches when `schema_version` first bumps. |
+| 129 | P1 | Fixed | Saves write a process-unique temp sibling and rename it into place. | Consider fsync-before-rename if progress ever carries grades worth hardening. |
+| 130 | P1 | Partial | A corrupt state file is quarantined as `.corrupt` and the app starts fresh. | Add rotated last-known-good backups and restore from them instead of starting empty. |
+| 131 | P1 | Partial | `platform::state_file_path()` resolves the state location per platform (`MEMO_STATE` override). | Extend the provider to config, cache, and logs; migrate the config path to it. |
 | 132 | P1 | Risk | Multiple app instances could race on one state file. | Add single-instance policy or explicit locking. |
 | 133 | P1 | Improvement | There is no transaction boundary for grade plus schedule update. | Persist each review event and derived state atomically. |
 | 134 | P1 | Improvement | Exposure history has no event schema. | Define immutable events with timestamps and source IDs. |
-| 135 | P1 | Risk | Wall-clock changes could invalidate due dates. | Store UTC instants and test clock rollback/forward behavior. |
+| 135 | P1 | Partial | Exposure timestamps are stored as UTC unix seconds, not process instants. | Test clock rollback/forward behavior once due dates exist. |
 | 136 | P1 | Improvement | User settings and learning state have no backup/export path. | Add portable, versioned export with secrets excluded. |
 | 137 | P1 | Improvement | Importing state has no conflict policy. | Offer replace/merge preview with deterministic rules. |
 | 138 | P1 | Risk | Future migrations could silently drop unknown fields. | Round-trip fixtures and retain forward-compatible extensions where possible. |
 | 139 | P2 | Improvement | State growth has no retention/compaction policy. | Compact derived history while preserving auditable review events. |
 | 140 | P2 | Improvement | No last-known-good snapshot is retained. | Rotate a small bounded set of backups. |
-| 141 | P2 | Risk | Sensitive local history could inherit permissive file modes. | Create state/config files with user-only permissions. |
+| 141 | P2 | Partial | The progress file is created 0o600 (user-only) on unix. | Apply the same treatment to any future config-writing or log paths. |
 | 142 | P2 | Improvement | Reset actions are not scoped. | Separate reset session, progress, settings, and all-data commands. |
 | 143 | P2 | Risk | A reset could be irreversible and accidental. | Require confirmation and offer a timestamped backup. |
-| 144 | P2 | Improvement | State writes cannot be deferred/coalesced intelligently. | Batch low-risk counters while flushing grades immediately. |
+| 144 | P2 | Partial | Exposure counters coalesce into one write per 60s, plus an unconditional flush on quit/drop; no idle wakeups are added. | Flush grades immediately (not coalesced) once grading exists. |
 | 145 | P2 | Improvement | Persistence health cannot be inspected. | Report path, schema, last save, backup, and migration status. |
 | 146 | P2 | Idea | SQLite/file choice has no measured decision record. | Benchmark complexity, durability, size, and migration needs in an ADR. |
 | 147 | P2 | Idea | Cross-device sync has no conflict-ready event model. | Keep immutable event IDs if sync is a future goal. |
