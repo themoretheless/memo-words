@@ -7,6 +7,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- Persistent learning progress: per-word exposure counts with first/last-seen
+  timestamps survive restarts, stored as a versioned JSON file behind a
+  `ProgressStore` port (atomic writes, corrupt-file quarantine, user-only
+  permissions, `MEMO_STATE` override). Progress counts appear in the copyable
+  diagnostics; the words themselves stay private.
 - A domain-neutral `AppCommand` boundary with independently tested tray-ID
   translation and one adapter-owned menu construction path.
 - State-aware tray verbs: `Pause` becomes `Resume`, while `Reload words` becomes
